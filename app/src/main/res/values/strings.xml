@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<resources>
+
+    <string name="app_name">Duplicate Photo &amp; Video Finder</string>
+
+    <!-- Home -->
+
+    <string name="home_subtitle">
+        Find duplicates, review them, and free up storage.
+    </string>
+
+    <string name="full_scan_title">
+        Scan entire library
+    </string>
+
+    <string name="full_scan_description">
+        Check all photos and videos on your device for exact duplicates.
+    </string>
+
+    <string name="scan_all">
+        📱  SCAN ALL
+    </string>
+
+    <string name="folder_scan_title">
+        Scan selected folders
+    </string>
+
+    <string name="folder_scan_description">
+        Choose one or more folders when you want a faster, focused scan.
+    </string>
+
+    <string name="select_folders">
+        📁  SELECT FOLDERS
+    </string>
+
+    <string name="scan_selected">
+        🔍  SCAN SELECTED FOLDERS
+    </string>
+
+    <string name="library_summary">
+        Your media library
+    </string>
+
+    <!-- Permissions -->
+
+    <string name="permission_required">
+        Photo and video permission is required to scan your media.
+    </string>
+
+    <!-- Status -->
+
+    <string name="status_ready">
+        Ready to scan
+    </string>
+
+    <string name="status_scanning">
+        Scanning media...
+    </string>
+
+    <string name="status_complete">
+        Scan complete
+    </string>
+
+    <string name="preparing_scan">
+        Preparing scan...
+    </string>
+
+    <string name="cancel_scan">
+        CANCEL SCAN
+    </string>
+
+    <!-- Folder selection -->
+
+    <string name="folder_picker_title">
+        Select a folder to scan
+    </string>
+
+    <string name="folder_added">
+        Folder added: %1$s
+    </string>
+
+    <string name="folders_selected">
+        Selected folders: %1$d
+    </string>
+
+    <string name="no_folders_selected">
+        No folders selected yet. Tap SELECT FOLDERS to choose one or more folders.
+    </string>
+
+    <!-- Counts -->
+
+    <string name="photos_count">
+        Photos: %1$d
+    </string>
+
+    <string name="videos_count">
+        Videos: %1$d
+    </string>
+
+    <string name="total_count">
+        Total: %1$d
+    </string>
+
+    <string name="photos_zero">
+        Photos: 0
+    </string>
+
+    <string name="videos_zero">
+        Videos: 0
+    </string>
+
+    <string name="total_zero">
+        Total: 0
+    </string>
+
+    <!-- Results -->
+
+    <string name="duplicates_found">
+        Found %1$d exact duplicate files. Potential storage to recover: %2$s
+    </string>
+
+    <string name="no_duplicates">
+        Scan complete. No exact duplicates found.
+    </string>
+
+    <!-- Android Studio navigation template strings -->
+
+    <string name="first_fragment_label">First Fragment</string>
+
+    <string name="second_fragment_label">Second Fragment</string>
+
+    <string name="next">Next</string>
+
+    <string name="previous">Previous</string>
+
+    <string name="lorem_ipsum">
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem.
+        Mauris volutpat, dolor id interdum ullamcorper, risus dolor egestas lectus, sit amet
+        mattis purus dui nec risus.
+    </string>
+
+</resources>
