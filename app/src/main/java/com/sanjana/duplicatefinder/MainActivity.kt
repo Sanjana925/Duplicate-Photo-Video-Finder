@@ -1,156 +1,207 @@
 package com.sanjana.duplicatefinder
 
 import android.Manifest
-import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.view.View
-import android.widget.Button
-import android.widget.ProgressBar
-import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.BufferedInputStream
 import java.security.MessageDigest
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var scanAllButton: Button
-    private lateinit var selectFoldersButton: Button
-    private lateinit var scanSelectedButton: Button
+    private lateinit var titleText: android.widget.TextView
+    private lateinit var subtitleText: android.widget.TextView
 
-    private lateinit var progressBar: ProgressBar
+    private lateinit var scanAllButton:
+            com.google.android.material.button.MaterialButton
+
+    private lateinit var selectFoldersButton:
+            com.google.android.material.button.MaterialButton
+
+    private lateinit var scanSelectedButton:
+            com.google.android.material.button.MaterialButton
+
+    private lateinit var excludeFoldersButton:
+            com.google.android.material.button.MaterialButton
+
+    private lateinit var clearExcludedFoldersButton:
+            com.google.android.material.button.MaterialButton
 
     private lateinit var scanningProgressContainer: View
-    private lateinit var scanningStageText: TextView
-    private lateinit var scanningProgressText: TextView
-    private lateinit var scanningProgressBar: ProgressBar
-    private lateinit var cancelScanButton: Button
+    private lateinit var scanningStageText: android.widget.TextView
+    private lateinit var scanningProgressText: android.widget.TextView
+    private lateinit var scanningProgressBar: android.widget.ProgressBar
 
-    private lateinit var statusText: TextView
-    private lateinit var selectedFoldersText: TextView
-    private lateinit var photoCountText: TextView
-    private lateinit var videoCountText: TextView
-    private lateinit var totalCountText: TextView
+    private lateinit var cancelScanButton:
+            com.google.android.material.button.MaterialButton
 
-    private val selectedFolderPaths =
-        mutableListOf<String>()
+    private lateinit var progressBar:
+            android.widget.ProgressBar
 
-    private var pendingScanSelectedOnly =
-        false
+    private lateinit var statusText:
+            android.widget.TextView
 
-    private var scanJob: Job? =
-        null
+    private lateinit var selectedFoldersText:
+            android.widget.TextView
 
-    private val folderPickerLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
+    private lateinit var excludedFoldersText:
+            android.widget.TextView
 
-            if (result.resultCode != RESULT_OK) {
-                return@registerForActivityResult
-            }
+    private lateinit var photoCountText:
+            android.widget.TextView
 
-            val treeUri =
-                result.data?.data
-                    ?: return@registerForActivityResult
+    private lateinit var videoCountText:
+            android.widget.TextView
 
-            try {
+    private lateinit var totalCountText:
+            android.widget.TextView
 
-                contentResolver.takePersistableUriPermission(
-                    treeUri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+    private val selectedFolderUris =
+        mutableListOf<Uri>()
 
-            } catch (_: SecurityException) {
-            }
+    private val excludedFolderUris =
+        mutableListOf<Uri>()
 
-            val folderPath =
-                getFolderPathFromTreeUri(
-                    treeUri
-                )
-
-            if (folderPath.isNotEmpty()) {
-
-                if (
-                    !selectedFolderPaths.contains(
-                        folderPath
-                    )
-                ) {
-
-                    selectedFolderPaths.add(
-                        folderPath
-                    )
-
-                    updateSelectedFoldersUi()
-
-                    statusText.text =
-                        getString(
-                            R.string.folder_added,
-                            folderPath
-                        )
-                }
-            }
-        }
+    private var scanJob: Job? = null
 
     private val permissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
 
-            val granted =
-                if (
-                    Build.VERSION.SDK_INT >=
-                    Build.VERSION_CODES.TIRAMISU
-                ) {
+            val imageGranted =
+                permissions[
+                    Manifest.permission.READ_MEDIA_IMAGES
+                ] == true
 
-                    permissions[
-                        Manifest.permission.READ_MEDIA_IMAGES
-                    ] == true ||
-                            permissions[
-                                Manifest.permission.READ_MEDIA_VIDEO
-                            ] == true
+            val videoGranted =
+                permissions[
+                    Manifest.permission.READ_MEDIA_VIDEO
+                ] == true
 
-                } else {
+            val legacyGranted =
+                permissions[
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                ] == true
 
-                    permissions.values.any {
-                        it
-                    }
-                }
-
-            if (granted) {
+            if (
+                imageGranted ||
+                videoGranted ||
+                legacyGranted
+            ) {
 
                 startScan(
-                    pendingScanSelectedOnly
+                    scanAll = true
                 )
 
             } else {
 
-                statusText.text =
-                    getString(
-                        R.string.permission_required
-                    )
+                Toast.makeText(
+                    this,
+                    "Photo and video permission is required to scan your media.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+    private val folderPickerLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.OpenDocumentTree()
+        ) { uri ->
+
+            if (uri == null) {
+                return@registerForActivityResult
+            }
+
+            try {
+
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+
+            } catch (_: Exception) {
+                // Some devices do not allow persistable permission here.
+            }
+
+            if (
+                !selectedFolderUris.contains(uri)
+            ) {
+
+                selectedFolderUris.add(
+                    uri
+                )
+
+                updateSelectedFoldersText()
+
+                Toast.makeText(
+                    this,
+                    "Folder added.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
+    private val excludeFolderPickerLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.OpenDocumentTree()
+        ) { uri ->
+
+            if (uri == null) {
+                return@registerForActivityResult
+            }
+
+            try {
+
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+
+            } catch (_: Exception) {
+                // Some devices do not allow persistable permission here.
+            }
+
+            if (
+                !excludedFolderUris.contains(uri)
+            ) {
+
+                excludedFolderUris.add(
+                    uri
+                )
+
+                updateExcludedFoldersText()
+
+                Toast.makeText(
+                    this,
+                    "Folder excluded.",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
 
     override fun onCreate(
         savedInstanceState: Bundle?
     ) {
+
         super.onCreate(
             savedInstanceState
         )
@@ -158,6 +209,16 @@ class MainActivity : AppCompatActivity() {
         setContentView(
             R.layout.activity_main
         )
+
+        titleText =
+            findViewById(
+                R.id.titleText
+            )
+
+        subtitleText =
+            findViewById(
+                R.id.subtitleText
+            )
 
         scanAllButton =
             findViewById(
@@ -174,9 +235,14 @@ class MainActivity : AppCompatActivity() {
                 R.id.scanSelectedButton
             )
 
-        progressBar =
+        excludeFoldersButton =
             findViewById(
-                R.id.progressBar
+                R.id.excludeFoldersButton
+            )
+
+        clearExcludedFoldersButton =
+            findViewById(
+                R.id.clearExcludedFoldersButton
             )
 
         scanningProgressContainer =
@@ -204,6 +270,11 @@ class MainActivity : AppCompatActivity() {
                 R.id.cancelScanButton
             )
 
+        progressBar =
+            findViewById(
+                R.id.progressBar
+            )
+
         statusText =
             findViewById(
                 R.id.statusText
@@ -212,6 +283,11 @@ class MainActivity : AppCompatActivity() {
         selectedFoldersText =
             findViewById(
                 R.id.selectedFoldersText
+            )
+
+        excludedFoldersText =
+            findViewById(
+                R.id.excludedFoldersText
             )
 
         photoCountText =
@@ -231,58 +307,1839 @@ class MainActivity : AppCompatActivity() {
 
         scanAllButton.setOnClickListener {
 
+            if (
+                scanJob?.isActive == true
+            ) {
+                return@setOnClickListener
+            }
+
             checkPermissionsAndScan(
-                selectedOnly = false
+                scanAll = true
             )
         }
 
         selectFoldersButton.setOnClickListener {
 
-            openFolderPicker()
+            if (
+                scanJob?.isActive == true
+            ) {
+                return@setOnClickListener
+            }
+
+            folderPickerLauncher.launch(
+                null
+            )
         }
 
         scanSelectedButton.setOnClickListener {
 
             if (
-                selectedFolderPaths.isNotEmpty()
+                scanJob?.isActive == true
+            ) {
+                return@setOnClickListener
+            }
+
+            if (
+                selectedFolderUris.isEmpty()
             ) {
 
-                checkPermissionsAndScan(
-                    selectedOnly = true
-                )
+                Toast.makeText(
+                    this,
+                    "Select at least one folder first.",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                return@setOnClickListener
             }
+
+            checkPermissionsAndScan(
+                scanAll = false
+            )
+        }
+
+        excludeFoldersButton.setOnClickListener {
+
+            if (
+                scanJob?.isActive == true
+            ) {
+                return@setOnClickListener
+            }
+
+            excludeFolderPickerLauncher.launch(
+                null
+            )
+        }
+
+        clearExcludedFoldersButton.setOnClickListener {
+
+            if (
+                scanJob?.isActive == true
+            ) {
+                return@setOnClickListener
+            }
+
+            excludedFolderUris.clear()
+
+            updateExcludedFoldersText()
+
+            Toast.makeText(
+                this,
+                "Excluded folders cleared.",
+                Toast.LENGTH_SHORT
+            ).show()
         }
 
         cancelScanButton.setOnClickListener {
 
-            cancelCurrentScan()
-        }
+            scanJob?.cancel()
 
-        updateSelectedFoldersUi()
-    }
-
-    private fun openFolderPicker() {
-
-        val intent =
-            Intent(
-                Intent.ACTION_OPEN_DOCUMENT_TREE
+            setScanningUi(
+                scanning = false
             )
 
-        intent.addFlags(
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+            statusText.text =
+                "Scan cancelled."
+
+            Toast.makeText(
+                this,
+                "Scan cancelled.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        updateSelectedFoldersText()
+        updateExcludedFoldersText()
+    }
+
+    private fun checkPermissionsAndScan(
+        scanAll: Boolean
+    ) {
+
+        val permissions =
+            requiredPermissions()
+
+        val missingPermissions =
+            permissions.filter { permission ->
+
+                ContextCompat.checkSelfPermission(
+                    this,
+                    permission
+                ) != PackageManager.PERMISSION_GRANTED
+            }
+
+        if (
+            missingPermissions.isEmpty()
+        ) {
+
+            startScan(
+                scanAll
+            )
+
+        } else {
+
+            permissionLauncher.launch(
+                missingPermissions.toTypedArray()
+            )
+        }
+    }
+
+    private fun requiredPermissions(): List<String> {
+
+        return if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.TIRAMISU
+        ) {
+
+            listOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO
+            )
+
+        } else {
+
+            listOf(
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            )
+        }
+    }
+
+    private fun startScan(
+        scanAll: Boolean
+    ) {
+
+        if (
+            scanJob?.isActive == true
+        ) {
+            return
+        }
+
+        setScanningUi(
+            scanning = true
         )
 
-        folderPickerLauncher.launch(
-            intent
+        statusText.text =
+            "Scanning media..."
+
+        scanJob =
+            lifecycleScope.launch {
+
+                try {
+
+                    val result =
+                        withContext(
+                            Dispatchers.IO
+                        ) {
+
+                            scanMedia(
+                                scanAll
+                            )
+                        }
+
+                    currentCoroutineContext()
+                        .ensureActive()
+
+                    setScanningUi(
+                        scanning = false
+                    )
+
+                    showScanResult(
+                        result
+                    )
+
+                } catch (
+                    exception: kotlinx.coroutines.CancellationException
+                ) {
+
+                    setScanningUi(
+                        scanning = false
+                    )
+
+                    statusText.text =
+                        "Scan cancelled."
+
+                } catch (
+                    exception: Exception
+                ) {
+
+                    setScanningUi(
+                        scanning = false
+                    )
+
+                    statusText.text =
+                        "Scan failed."
+
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Scan failed: ${exception.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+    }
+
+    private suspend fun scanMedia(
+        scanAll: Boolean
+    ): ScanResult {
+
+        updateProgress(
+            "Reading media library...",
+            5
+        )
+
+        val mediaFiles =
+            queryMediaFiles(
+                scanAll
+            )
+
+        currentCoroutineContext()
+            .ensureActive()
+
+        val photos =
+            mediaFiles.filter {
+                it.mediaType == MediaType.PHOTO
+            }
+
+        val videos =
+            mediaFiles.filter {
+                it.mediaType == MediaType.VIDEO
+            }
+
+        updateProgress(
+            "Found ${photos.size} photos and ${videos.size} videos.",
+            15
+        )
+
+        currentCoroutineContext()
+            .ensureActive()
+
+        val photoExactGroups =
+            hashMediaFiles(
+                photos,
+                "Checking exact photo duplicates"
+            )
+
+        currentCoroutineContext()
+            .ensureActive()
+
+        val videoExactGroups =
+            hashMediaFiles(
+                videos,
+                "Checking exact video duplicates"
+            )
+
+        currentCoroutineContext()
+            .ensureActive()
+
+        updateProgress(
+            "Analyzing similar photos...",
+            70
+        )
+
+        val exactPhotoUris =
+            photoExactGroups
+                .flatten()
+                .map {
+                    it.uri
+                }
+                .toSet()
+
+        val similarPhotoSource =
+            photos.filter {
+
+                !exactPhotoUris.contains(
+                    it.uri.toString()
+                )
+            }
+
+        val similarPhotoGroups =
+            findSimilarPhotoGroups(
+                similarPhotoSource
+            )
+
+        currentCoroutineContext()
+            .ensureActive()
+
+        updateProgress(
+            "Analyzing photo dates and times...",
+            96
+        )
+
+        val exactPhotoUriSet =
+            photoExactGroups
+                .flatten()
+                .map {
+                    it.uri
+                }
+                .toSet()
+
+        val dateTimePhotoSource =
+            photos.filter { photo ->
+
+                !exactPhotoUriSet.contains(
+                    photo.uri.toString()
+                )
+            }
+
+        val dateTimePhotoGroups =
+            findDateTimePhotoGroups(
+                dateTimePhotoSource
+            )
+
+        currentCoroutineContext()
+            .ensureActive()
+
+        updateProgress(
+            "Finishing results...",
+            100
+        )
+
+        return ScanResult(
+            photos = photos,
+            videos = videos,
+            exactPhotoGroups = photoExactGroups,
+            exactVideoGroups = videoExactGroups,
+            similarPhotoGroups = similarPhotoGroups,
+            dateTimePhotoGroups = dateTimePhotoGroups
         )
     }
 
-    private fun updateSelectedFoldersUi() {
+    private suspend fun queryMediaFiles(
+        scanAll: Boolean
+    ): List<MediaFile> {
+
+        val result =
+            mutableListOf<MediaFile>()
+
+        val imageCollection =
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+
+        val imageProjection =
+            arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DISPLAY_NAME,
+                MediaStore.Images.Media.MIME_TYPE,
+                MediaStore.Images.Media.SIZE,
+                MediaStore.Images.Media.DATE_ADDED,
+                MediaStore.Images.Media.DATE_MODIFIED,
+                MediaStore.Images.Media.WIDTH,
+                MediaStore.Images.Media.HEIGHT,
+                MediaStore.Images.Media.RELATIVE_PATH
+            )
+
+        contentResolver.query(
+            imageCollection,
+            imageProjection,
+            null,
+            null,
+            null
+        )?.use { cursor ->
+
+            val idIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.Media._ID
+                )
+
+            val nameIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.Media.DISPLAY_NAME
+                )
+
+            val mimeIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.Media.MIME_TYPE
+                )
+
+            val sizeIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.Media.SIZE
+                )
+
+            val addedIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.Media.DATE_ADDED
+                )
+
+            val modifiedIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.Media.DATE_MODIFIED
+                )
+
+            val widthIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.Media.WIDTH
+                )
+
+            val heightIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.Media.HEIGHT
+                )
+
+            val pathIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.Media.RELATIVE_PATH
+                )
+
+            while (
+                cursor.moveToNext()
+            ) {
+
+                currentCoroutineContext()
+                    .ensureActive()
+
+                val relativePath =
+                    cursor.getString(
+                        pathIndex
+                    ) ?: ""
+
+                if (
+                    isExcludedPath(
+                        relativePath
+                    )
+                ) {
+                    continue
+                }
+
+                if (
+                    !scanAll &&
+                    !isInsideSelectedFolder(
+                        relativePath
+                    )
+                ) {
+                    continue
+                }
+
+                val id =
+                    cursor.getLong(
+                        idIndex
+                    )
+
+                val uri =
+                    Uri.withAppendedPath(
+                        imageCollection,
+                        id.toString()
+                    )
+
+                result.add(
+                    MediaFile(
+                        uri = uri,
+                        name =
+                            cursor.getString(
+                                nameIndex
+                            ) ?: "Unknown",
+                        mimeType =
+                            cursor.getString(
+                                mimeIndex
+                            ) ?: "",
+                        size =
+                            cursor.getLong(
+                                sizeIndex
+                            ),
+                        dateAdded =
+                            cursor.getLong(
+                                addedIndex
+                            ),
+                        dateModified =
+                            cursor.getLong(
+                                modifiedIndex
+                            ),
+                        width =
+                            cursor.getInt(
+                                widthIndex
+                            ),
+                        height =
+                            cursor.getInt(
+                                heightIndex
+                            ),
+                        duration = 0L,
+                        relativePath =
+                            relativePath,
+                        mediaType =
+                            MediaType.PHOTO
+                    )
+                )
+            }
+        }
+
+        updateProgress(
+            "Reading videos...",
+            10
+        )
+
+        val videoCollection =
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+
+        val videoProjection =
+            arrayOf(
+                MediaStore.Video.Media._ID,
+                MediaStore.Video.Media.DISPLAY_NAME,
+                MediaStore.Video.Media.MIME_TYPE,
+                MediaStore.Video.Media.SIZE,
+                MediaStore.Video.Media.DATE_ADDED,
+                MediaStore.Video.Media.DATE_MODIFIED,
+                MediaStore.Video.Media.WIDTH,
+                MediaStore.Video.Media.HEIGHT,
+                MediaStore.Video.Media.DURATION,
+                MediaStore.Video.Media.RELATIVE_PATH
+            )
+
+        contentResolver.query(
+            videoCollection,
+            videoProjection,
+            null,
+            null,
+            null
+        )?.use { cursor ->
+
+            val idIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media._ID
+                )
+
+            val nameIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media.DISPLAY_NAME
+                )
+
+            val mimeIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media.MIME_TYPE
+                )
+
+            val sizeIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media.SIZE
+                )
+
+            val addedIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media.DATE_ADDED
+                )
+
+            val modifiedIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media.DATE_MODIFIED
+                )
+
+            val widthIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media.WIDTH
+                )
+
+            val heightIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media.HEIGHT
+                )
+
+            val durationIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media.DURATION
+                )
+
+            val pathIndex =
+                cursor.getColumnIndexOrThrow(
+                    MediaStore.Video.Media.RELATIVE_PATH
+                )
+
+            while (
+                cursor.moveToNext()
+            ) {
+
+                currentCoroutineContext()
+                    .ensureActive()
+
+                val relativePath =
+                    cursor.getString(
+                        pathIndex
+                    ) ?: ""
+
+                if (
+                    isExcludedPath(
+                        relativePath
+                    )
+                ) {
+                    continue
+                }
+
+                if (
+                    !scanAll &&
+                    !isInsideSelectedFolder(
+                        relativePath
+                    )
+                ) {
+                    continue
+                }
+
+                val id =
+                    cursor.getLong(
+                        idIndex
+                    )
+
+                val uri =
+                    Uri.withAppendedPath(
+                        videoCollection,
+                        id.toString()
+                    )
+
+                result.add(
+                    MediaFile(
+                        uri = uri,
+                        name =
+                            cursor.getString(
+                                nameIndex
+                            ) ?: "Unknown",
+                        mimeType =
+                            cursor.getString(
+                                mimeIndex
+                            ) ?: "",
+                        size =
+                            cursor.getLong(
+                                sizeIndex
+                            ),
+                        dateAdded =
+                            cursor.getLong(
+                                addedIndex
+                            ),
+                        dateModified =
+                            cursor.getLong(
+                                modifiedIndex
+                            ),
+                        width =
+                            cursor.getInt(
+                                widthIndex
+                            ),
+                        height =
+                            cursor.getInt(
+                                heightIndex
+                            ),
+                        duration =
+                            cursor.getLong(
+                                durationIndex
+                            ),
+                        relativePath =
+                            relativePath,
+                        mediaType =
+                            MediaType.VIDEO
+                    )
+                )
+            }
+        }
+
+        return result
+    }
+
+    private fun isInsideSelectedFolder(
+        relativePath: String
+    ): Boolean {
 
         if (
-            selectedFolderPaths.isEmpty()
+            selectedFolderUris.isEmpty()
+        ) {
+            return false
+        }
+
+        val normalizedMediaPath =
+            relativePath
+                .trim('/')
+                .lowercase(Locale.US)
+
+        return selectedFolderUris.any { treeUri ->
+
+            val treePath =
+                getTreeRelativePath(
+                    treeUri
+                )
+                    .trim('/')
+                    .lowercase(Locale.US)
+
+            if (
+                treePath.isBlank()
+            ) {
+
+                true
+
+            } else {
+
+                normalizedMediaPath == treePath ||
+                        normalizedMediaPath.startsWith(
+                            "$treePath/"
+                        )
+            }
+        }
+    }
+
+    private fun isExcludedPath(
+        relativePath: String
+    ): Boolean {
+
+        if (
+            excludedFolderUris.isEmpty()
+        ) {
+            return false
+        }
+
+        val normalizedMediaPath =
+            relativePath
+                .trim('/')
+                .lowercase(Locale.US)
+
+        return excludedFolderUris.any { treeUri ->
+
+            val treePath =
+                getTreeRelativePath(
+                    treeUri
+                )
+                    .trim('/')
+                    .lowercase(Locale.US)
+
+            if (
+                treePath.isBlank()
+            ) {
+
+                false
+
+            } else {
+
+                normalizedMediaPath == treePath ||
+                        normalizedMediaPath.startsWith(
+                            "$treePath/"
+                        )
+            }
+        }
+    }
+
+    private fun getTreeRelativePath(
+        treeUri: Uri
+    ): String {
+
+        return try {
+
+            val documentId =
+                DocumentsContract.getTreeDocumentId(
+                    treeUri
+                )
+
+            if (
+                documentId.startsWith(
+                    "primary:",
+                    ignoreCase = true
+                )
+            ) {
+
+                documentId
+                    .substringAfter(':')
+                    .trim('/')
+
+            } else {
+
+                documentId
+                    .substringAfterLast(':')
+                    .trim('/')
+            }
+
+        } catch (_: Exception) {
+
+            ""
+        }
+    }
+
+    private suspend fun hashMediaFiles(
+        files: List<MediaFile>,
+        stage: String
+    ): List<List<DuplicateResultsActivity.DuplicateItem>> {
+
+        if (
+            files.isEmpty()
+        ) {
+            return emptyList()
+        }
+
+        val sizeGroups =
+            files
+                .groupBy {
+                    it.size
+                }
+                .values
+                .filter {
+                    it.size > 1
+                }
+
+        if (
+            sizeGroups.isEmpty()
+        ) {
+
+            updateProgress(
+                stage,
+                55
+            )
+
+            return emptyList()
+        }
+
+        val quickFingerprintGroups =
+            mutableMapOf<
+                    String,
+                    MutableList<MediaFile>
+                    >()
+
+        var processed =
+            0
+
+        val totalCandidates =
+            sizeGroups.sumOf {
+                it.size
+            }
+
+        for (
+        sizeGroup in sizeGroups
+        ) {
+
+            for (
+            file in sizeGroup
+            ) {
+
+                currentCoroutineContext()
+                    .ensureActive()
+
+                val quick =
+                    calculateQuickFingerprint(
+                        file.uri
+                    )
+
+                if (
+                    quick != null
+                ) {
+
+                    val key =
+                        "${file.size}:$quick"
+
+                    quickFingerprintGroups
+                        .getOrPut(
+                            key
+                        ) {
+                            mutableListOf()
+                        }
+                        .add(
+                            file
+                        )
+                }
+
+                processed++
+
+                if (
+                    processed % 20 == 0 ||
+                    processed == totalCandidates
+                ) {
+
+                    val progress =
+                        20 +
+                                (
+                                        processed.toDouble() /
+                                                totalCandidates
+                                                    .coerceAtLeast(1) *
+                                                35
+                                        ).toInt()
+
+                    updateProgress(
+                        stage,
+                        progress.coerceAtMost(
+                            55
+                        )
+                    )
+                }
+            }
+        }
+
+        val fullCandidates =
+            quickFingerprintGroups
+                .values
+                .filter {
+                    it.size > 1
+                }
+                .flatten()
+
+        if (
+            fullCandidates.isEmpty()
+        ) {
+            return emptyList()
+        }
+
+        val hashGroups =
+            mutableMapOf<
+                    String,
+                    MutableList<
+                            DuplicateResultsActivity.DuplicateItem
+                            >
+                    >()
+
+        var hashed =
+            0
+
+        for (
+        file in fullCandidates
+        ) {
+
+            currentCoroutineContext()
+                .ensureActive()
+
+            val sha256 =
+                calculateSha256(
+                    file.uri
+                )
+
+            if (
+                sha256 != null
+            ) {
+
+                val item =
+                    file.toDuplicateItem(
+                        sha256
+                    )
+
+                hashGroups
+                    .getOrPut(
+                        sha256
+                    ) {
+                        mutableListOf()
+                    }
+                    .add(
+                        item
+                    )
+            }
+
+            hashed++
+
+            if (
+                hashed % 5 == 0 ||
+                hashed == fullCandidates.size
+            ) {
+
+                val progress =
+                    55 +
+                            (
+                                    hashed.toDouble() /
+                                            fullCandidates.size
+                                                .coerceAtLeast(1) *
+                                            15
+                                    ).toInt()
+
+                updateProgress(
+                    stage,
+                    progress.coerceAtMost(
+                        70
+                    )
+                )
+            }
+        }
+
+        return hashGroups
+            .values
+            .filter {
+                it.size > 1
+            }
+            .map {
+                it.toList()
+            }
+    }
+
+    private suspend fun findSimilarPhotoGroups(
+        photos: List<MediaFile>
+    ): List<List<DuplicateResultsActivity.DuplicateItem>> {
+
+        if (
+            photos.size < 2
+        ) {
+            return emptyList()
+        }
+
+        val hashedPhotos =
+            mutableListOf<PhotoHash>()
+
+        var processed =
+            0
+
+        for (
+        photo in photos
+        ) {
+
+            currentCoroutineContext()
+                .ensureActive()
+
+            val hash =
+                calculatePerceptualHash(
+                    photo.uri
+                )
+
+            if (
+                hash != null
+            ) {
+
+                hashedPhotos.add(
+                    PhotoHash(
+                        photo = photo,
+                        hash = hash
+                    )
+                )
+            }
+
+            processed++
+
+            if (
+                processed % 5 == 0 ||
+                processed == photos.size
+            ) {
+
+                val progress =
+                    70 +
+                            (
+                                    processed.toDouble() /
+                                            photos.size
+                                                .coerceAtLeast(1) *
+                                            25
+                                    ).toInt()
+
+                updateProgress(
+                    "Analyzing similar photos...",
+                    progress.coerceAtMost(
+                        95
+                    )
+                )
+            }
+        }
+
+        val buckets =
+            mutableMapOf<
+                    Int,
+                    MutableList<PhotoHash>
+                    >()
+
+        hashedPhotos.forEach { item ->
+
+            val bucket =
+                (item.hash ushr 56)
+                    .toInt()
+
+            buckets
+                .getOrPut(
+                    bucket
+                ) {
+                    mutableListOf()
+                }
+                .add(
+                    item
+                )
+        }
+
+        val adjacency =
+            mutableMapOf<
+                    String,
+                    MutableSet<String>
+                    >()
+
+        for (
+        bucketItems in buckets.values
+        ) {
+
+            for (
+            i in bucketItems.indices
+            ) {
+
+                for (
+                j in i + 1 until bucketItems.size
+                ) {
+
+                    currentCoroutineContext()
+                        .ensureActive()
+
+                    val first =
+                        bucketItems[i]
+
+                    val second =
+                        bucketItems[j]
+
+                    val distance =
+                        hammingDistance(
+                            first.hash,
+                            second.hash
+                        )
+
+                    if (
+                        distance <=
+                        SIMILAR_PHOTO_THRESHOLD
+                    ) {
+
+                        val firstUri =
+                            first.photo.uri.toString()
+
+                        val secondUri =
+                            second.photo.uri.toString()
+
+                        adjacency
+                            .getOrPut(
+                                firstUri
+                            ) {
+                                mutableSetOf()
+                            }
+                            .add(
+                                secondUri
+                            )
+
+                        adjacency
+                            .getOrPut(
+                                secondUri
+                            ) {
+                                mutableSetOf()
+                            }
+                            .add(
+                                firstUri
+                            )
+                    }
+                }
+            }
+        }
+
+        val photoByUri =
+            hashedPhotos.associateBy {
+                it.photo.uri.toString()
+            }
+
+        val visited =
+            mutableSetOf<String>()
+
+        val groups =
+            mutableListOf<
+                    List<
+                            DuplicateResultsActivity.DuplicateItem
+                            >
+                    >()
+
+        for (
+        item in hashedPhotos
+        ) {
+
+            currentCoroutineContext()
+                .ensureActive()
+
+            val startUri =
+                item.photo.uri.toString()
+
+            if (
+                visited.contains(
+                    startUri
+                )
+            ) {
+                continue
+            }
+
+            val neighbors =
+                adjacency[startUri]
+
+            if (
+                neighbors.isNullOrEmpty()
+            ) {
+                continue
+            }
+
+            val queue =
+                ArrayDeque<String>()
+
+            val groupUris =
+                mutableListOf<String>()
+
+            queue.add(
+                startUri
+            )
+
+            visited.add(
+                startUri
+            )
+
+            while (
+                queue.isNotEmpty()
+            ) {
+
+                currentCoroutineContext()
+                    .ensureActive()
+
+                val current =
+                    queue.removeFirst()
+
+                groupUris.add(
+                    current
+                )
+
+                adjacency[current]
+                    ?.forEach { next ->
+
+                        if (
+                            visited.add(
+                                next
+                            )
+                        ) {
+
+                            queue.add(
+                                next
+                            )
+                        }
+                    }
+            }
+
+            if (
+                groupUris.size > 1
+            ) {
+
+                val group =
+                    groupUris.mapNotNull { uri ->
+
+                        photoByUri[uri]
+                            ?.photo
+                            ?.toDuplicateItem(
+                                sha256 = ""
+                            )
+                    }
+
+                if (
+                    group.size > 1
+                ) {
+
+                    groups.add(
+                        group
+                    )
+                }
+            }
+        }
+
+        return groups
+    }
+
+    private suspend fun findDateTimePhotoGroups(
+        photos: List<MediaFile>
+    ): List<List<DuplicateResultsActivity.DuplicateItem>> {
+
+        if (
+            photos.size < 2
+        ) {
+            return emptyList()
+        }
+
+        val sortedPhotos =
+            photos
+                .filter {
+                    it.dateAdded > 0
+                }
+                .sortedBy {
+                    it.dateAdded
+                }
+
+        if (
+            sortedPhotos.size < 2
+        ) {
+            return emptyList()
+        }
+
+        val groups =
+            mutableListOf<
+                    List<
+                            DuplicateResultsActivity.DuplicateItem
+                            >
+                    >()
+
+        var currentGroup =
+            mutableListOf<MediaFile>()
+
+        for (
+        index in sortedPhotos.indices
+        ) {
+
+            currentCoroutineContext()
+                .ensureActive()
+
+            val current =
+                sortedPhotos[index]
+
+            if (
+                currentGroup.isEmpty()
+            ) {
+
+                currentGroup.add(
+                    current
+                )
+
+                continue
+            }
+
+            val previous =
+                currentGroup.last()
+
+            val difference =
+                current.dateAdded -
+                        previous.dateAdded
+
+            if (
+                difference <=
+                DATE_TIME_WINDOW_SECONDS
+            ) {
+
+                currentGroup.add(
+                    current
+                )
+
+            } else {
+
+                if (
+                    currentGroup.size >= 2
+                ) {
+
+                    groups.add(
+                        currentGroup.map {
+                            it.toDuplicateItem(
+                                sha256 = ""
+                            )
+                        }
+                    )
+                }
+
+                currentGroup =
+                    mutableListOf()
+
+                currentGroup.add(
+                    current
+                )
+            }
+        }
+
+        if (
+            currentGroup.size >= 2
+        ) {
+
+            groups.add(
+                currentGroup.map {
+                    it.toDuplicateItem(
+                        sha256 = ""
+                    )
+                }
+            )
+        }
+
+        return groups
+    }
+
+    private fun calculatePerceptualHash(
+        uri: Uri
+    ): Long? {
+
+        return try {
+
+            val bitmap =
+                contentResolver
+                    .openInputStream(uri)
+                    ?.use { input ->
+
+                        BitmapFactory
+                            .decodeStream(
+                                input
+                            )
+                    }
+                    ?: return null
+
+            val scaled =
+                Bitmap.createScaledBitmap(
+                    bitmap,
+                    PHASH_SIZE,
+                    PHASH_SIZE,
+                    true
+                )
+
+            val gray =
+                DoubleArray(
+                    PHASH_SIZE *
+                            PHASH_SIZE
+                )
+
+            for (
+            y in 0 until PHASH_SIZE
+            ) {
+
+                for (
+                x in 0 until PHASH_SIZE
+                ) {
+
+                    val pixel =
+                        scaled.getPixel(
+                            x,
+                            y
+                        )
+
+                    val red =
+                        (pixel shr 16) and 0xff
+
+                    val green =
+                        (pixel shr 8) and 0xff
+
+                    val blue =
+                        pixel and 0xff
+
+                    gray[
+                        y *
+                                PHASH_SIZE +
+                                x
+                    ] =
+                        0.299 * red +
+                                0.587 * green +
+                                0.114 * blue
+                }
+            }
+
+            if (
+                scaled !== bitmap
+            ) {
+                scaled.recycle()
+            }
+
+            if (
+                !bitmap.isRecycled
+            ) {
+                bitmap.recycle()
+            }
+
+            val dct =
+                Array(
+                    DCT_SIZE
+                ) {
+                    DoubleArray(
+                        DCT_SIZE
+                    )
+                }
+
+            for (
+            u in 0 until DCT_SIZE
+            ) {
+
+                for (
+                v in 0 until DCT_SIZE
+                ) {
+
+                    var sum =
+                        0.0
+
+                    for (
+                    x in 0 until PHASH_SIZE
+                    ) {
+
+                        for (
+                        y in 0 until PHASH_SIZE
+                        ) {
+
+                            sum +=
+                                gray[
+                                    y *
+                                            PHASH_SIZE +
+                                            x
+                                ] *
+                                        kotlin.math.cos(
+                                            (
+                                                    2.0 *
+                                                            x +
+                                                            1.0
+                                                    ) *
+                                                    u *
+                                                    Math.PI /
+                                                    (
+                                                            2.0 *
+                                                                    PHASH_SIZE
+                                                            )
+                                        ) *
+                                        kotlin.math.cos(
+                                            (
+                                                    2.0 *
+                                                            y +
+                                                            1.0
+                                                    ) *
+                                                    v *
+                                                    Math.PI /
+                                                    (
+                                                            2.0 *
+                                                                    PHASH_SIZE
+                                                            )
+                                        )
+                        }
+                    }
+
+                    val alphaU =
+                        if (
+                            u == 0
+                        ) {
+
+                            1.0 /
+                                    kotlin.math.sqrt(
+                                        PHASH_SIZE.toDouble()
+                                    )
+
+                        } else {
+
+                            kotlin.math.sqrt(
+                                2.0 /
+                                        PHASH_SIZE
+                            )
+                        }
+
+                    val alphaV =
+                        if (
+                            v == 0
+                        ) {
+
+                            1.0 /
+                                    kotlin.math.sqrt(
+                                        PHASH_SIZE.toDouble()
+                                    )
+
+                        } else {
+
+                            kotlin.math.sqrt(
+                                2.0 /
+                                        PHASH_SIZE
+                            )
+                        }
+
+                    dct[u][v] =
+                        alphaU *
+                                alphaV *
+                                sum
+                }
+            }
+
+            val values =
+                mutableListOf<Double>()
+
+            for (
+            u in 0 until DCT_SIZE
+            ) {
+
+                for (
+                v in 0 until DCT_SIZE
+                ) {
+
+                    if (
+                        u == 0 &&
+                        v == 0
+                    ) {
+                        continue
+                    }
+
+                    values.add(
+                        dct[u][v]
+                    )
+                }
+            }
+
+            val sorted =
+                values.sorted()
+
+            val median =
+                sorted[
+                    sorted.size / 2
+                ]
+
+            var hash =
+                0L
+
+            var bit =
+                0
+
+            for (
+            u in 0 until DCT_SIZE
+            ) {
+
+                for (
+                v in 0 until DCT_SIZE
+                ) {
+
+                    if (
+                        u == 0 &&
+                        v == 0
+                    ) {
+                        continue
+                    }
+
+                    if (
+                        dct[u][v] >
+                        median
+                    ) {
+
+                        hash =
+                            hash or
+                                    (
+                                            1L shl bit
+                                            )
+                    }
+
+                    bit++
+
+                    if (
+                        bit >= 63
+                    ) {
+
+                        return hash
+                    }
+                }
+            }
+
+            hash
+
+        } catch (_: Exception) {
+
+            null
+        }
+    }
+
+    private fun hammingDistance(
+        first: Long,
+        second: Long
+    ): Int {
+
+        return java.lang.Long
+            .bitCount(
+                first xor second
+            )
+    }
+
+    private fun calculateQuickFingerprint(
+        uri: Uri
+    ): String? {
+
+        return try {
+
+            val digest =
+                MessageDigest.getInstance(
+                    "SHA-256"
+                )
+
+            contentResolver
+                .openInputStream(uri)
+                ?.use { input ->
+
+                    val buffer =
+                        ByteArray(
+                            QUICK_FINGERPRINT_SIZE
+                        )
+
+                    var remaining =
+                        QUICK_FINGERPRINT_SIZE
+
+                    while (
+                        remaining > 0
+                    ) {
+
+                        val read =
+                            input.read(
+                                buffer,
+                                QUICK_FINGERPRINT_SIZE -
+                                        remaining,
+                                remaining
+                            )
+
+                        if (
+                            read <= 0
+                        ) {
+                            break
+                        }
+
+                        digest.update(
+                            buffer,
+                            QUICK_FINGERPRINT_SIZE -
+                                    remaining,
+                            read
+                        )
+
+                        remaining -= read
+                    }
+                }
+                ?: return null
+
+            digest
+                .digest()
+                .joinToString("") {
+                    "%02x".format(it)
+                }
+
+        } catch (_: Exception) {
+
+            null
+        }
+    }
+
+    private fun calculateSha256(
+        uri: Uri
+    ): String? {
+
+        return try {
+
+            val digest =
+                MessageDigest.getInstance(
+                    "SHA-256"
+                )
+
+            contentResolver
+                .openInputStream(uri)
+                ?.use { input ->
+
+                    val buffer =
+                        ByteArray(
+                            64 * 1024
+                        )
+
+                    while (true) {
+
+                        val read =
+                            input.read(
+                                buffer
+                            )
+
+                        if (
+                            read <= 0
+                        ) {
+                            break
+                        }
+
+                        digest.update(
+                            buffer,
+                            0,
+                            read
+                        )
+                    }
+                }
+                ?: return null
+
+            digest
+                .digest()
+                .joinToString("") {
+                    "%02x".format(it)
+                }
+
+        } catch (_: Exception) {
+
+            null
+        }
+    }
+
+    private fun updateProgress(
+        stage: String,
+        progress: Int
+    ) {
+
+        runOnUiThread {
+
+            scanningStageText.text =
+                stage
+
+            scanningProgressBar.progress =
+                progress.coerceIn(
+                    0,
+                    100
+                )
+
+            scanningProgressText.text =
+                "${progress.coerceIn(0, 100)}%"
+        }
+    }
+
+    private fun setScanningUi(
+        scanning: Boolean
+    ) {
+
+        scanningProgressContainer.visibility =
+            if (
+                scanning
+            ) {
+
+                View.VISIBLE
+
+            } else {
+
+                View.GONE
+            }
+
+        scanAllButton.isEnabled =
+            !scanning
+
+        selectFoldersButton.isEnabled =
+            !scanning
+
+        scanSelectedButton.isEnabled =
+            !scanning &&
+                    selectedFolderUris.isNotEmpty()
+
+        excludeFoldersButton.isEnabled =
+            !scanning
+
+        clearExcludedFoldersButton.isEnabled =
+            !scanning &&
+                    excludedFolderUris.isNotEmpty()
+    }
+
+    private fun updateSelectedFoldersText() {
+
+        if (
+            selectedFolderUris.isEmpty()
         ) {
 
             selectedFoldersText.text =
@@ -296,409 +2153,180 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val text =
+        selectedFoldersText.text =
+            getString(
+                R.string.folders_selected,
+                selectedFolderUris.size
+            )
+
+        scanSelectedButton.isEnabled =
+            scanJob?.isActive != true
+    }
+
+    private fun updateExcludedFoldersText() {
+
+        if (
+            excludedFolderUris.isEmpty()
+        ) {
+
+            excludedFoldersText.text =
+                "No excluded folders."
+
+            clearExcludedFoldersButton.isEnabled =
+                false
+
+            return
+        }
+
+        val folderNames =
+            excludedFolderUris.mapIndexed {
+                    index,
+                    uri ->
+
+                val path =
+                    getTreeRelativePath(
+                        uri
+                    )
+
+                val name =
+                    path
+                        .trim('/')
+                        .substringAfterLast('/')
+                        .ifBlank {
+                            path.ifBlank {
+                                "Selected folder"
+                            }
+                        }
+
+                "${index + 1}. $name"
+            }
+
+        excludedFoldersText.text =
             buildString {
 
                 append(
-                    getString(
-                        R.string.folders_selected,
-                        selectedFolderPaths.size
+                    "Excluded folders: "
+                )
+
+                append(
+                    excludedFolderUris.size
+                )
+
+                append(
+                    "\n"
+                )
+
+                append(
+                    folderNames.joinToString(
+                        "\n"
                     )
                 )
-
-                append("\n\n")
-
-                selectedFolderPaths.forEachIndexed {
-                        index,
-                        path ->
-
-                    append(index + 1)
-                    append(". ")
-                    append(path)
-                    append("\n")
-                }
             }
 
-        selectedFoldersText.text =
-            text
-
-        scanSelectedButton.isEnabled =
-            true
-    }
-
-    private fun checkPermissionsAndScan(
-        selectedOnly: Boolean
-    ) {
-
-        pendingScanSelectedOnly =
-            selectedOnly
-
-        val permissions: Array<String>
-
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.TIRAMISU
-        ) {
-
-            permissions =
-                arrayOf(
-                    Manifest.permission.READ_MEDIA_IMAGES,
-                    Manifest.permission.READ_MEDIA_VIDEO
-                )
-
-        } else {
-
-            permissions =
-                arrayOf(
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                )
-        }
-
-        val allGranted =
-            permissions.all { permission ->
-
-                ContextCompat.checkSelfPermission(
-                    this,
-                    permission
-                ) ==
-                        PackageManager.PERMISSION_GRANTED
-            }
-
-        if (allGranted) {
-
-            startScan(
-                selectedOnly
-            )
-
-        } else {
-
-            permissionLauncher.launch(
-                permissions
-            )
-        }
-    }
-
-    private fun startScan(
-        selectedOnly: Boolean
-    ) {
-
-        if (
-            scanJob?.isActive == true
-        ) {
-            return
-        }
-
-        scanAllButton.isEnabled =
-            false
-
-        selectFoldersButton.isEnabled =
-            false
-
-        scanSelectedButton.isEnabled =
-            false
-
-        progressBar.visibility =
-            View.GONE
-
-        scanningProgressContainer.visibility =
-            View.VISIBLE
-
-        scanningProgressBar.progress =
-            0
-
-        scanningProgressText.text =
-            "0%"
-
-        scanningStageText.text =
-            "Preparing scan..."
-
-        cancelScanButton.isEnabled =
-            true
-
-        statusText.text =
-            getString(
-                R.string.status_scanning
-            )
-
-        scanJob =
-            lifecycleScope.launch {
-
-                try {
-
-                    val result =
-                        withContext(
-                            Dispatchers.IO
-                        ) {
-
-                            scanAndFindDuplicates(
-                                selectedOnly
-                            )
-                        }
-
-                    showScanFinishedState()
-
-                    photoCountText.text =
-                        getString(
-                            R.string.photos_count,
-                            result.photos.size
-                        )
-
-                    videoCountText.text =
-                        getString(
-                            R.string.videos_count,
-                            result.videos.size
-                        )
-
-                    totalCountText.text =
-                        getString(
-                            R.string.total_count,
-                            result.photos.size +
-                                    result.videos.size
-                        )
-
-                    statusText.text =
-                        buildResultMessage(
-                            result
-                        )
-
-                    if (
-                        result.photoDuplicateGroups.isNotEmpty() ||
-                        result.videoDuplicateGroups.isNotEmpty()
-                    ) {
-
-                        openDuplicateResults(
-                            result
-                        )
-                    }
-
-                } catch (
-                    cancellation: CancellationException
-                ) {
-
-                    showScanFinishedState()
-
-                    statusText.text =
-                        "Scan cancelled."
-
-                    scanningStageText.text =
-                        "Scan cancelled"
-
-                    scanningProgressText.text =
-                        "Cancelled"
-
-                    throw cancellation
-
-                } catch (
-                    exception: Exception
-                ) {
-
-                    showScanFinishedState()
-
-                    statusText.text =
-                        "Scan failed: ${exception.message ?: "Unknown error"}"
-
-                    scanningStageText.text =
-                        "Scan failed"
-                }
-            }
-    }
-
-    private fun cancelCurrentScan() {
-
-        if (
+        clearExcludedFoldersButton.isEnabled =
             scanJob?.isActive != true
-        ) {
-            return
-        }
-
-        cancelScanButton.isEnabled =
-            false
-
-        scanningStageText.text =
-            "Cancelling scan..."
-
-        scanningProgressText.text =
-            "Please wait..."
-
-        statusText.text =
-            "Cancelling scan..."
-
-        scanJob?.cancel()
     }
 
-    private fun showScanFinishedState() {
-
-        scanAllButton.isEnabled =
-            true
-
-        selectFoldersButton.isEnabled =
-            true
-
-        scanSelectedButton.isEnabled =
-            selectedFolderPaths.isNotEmpty()
-
-        cancelScanButton.isEnabled =
-            false
-
-        scanningProgressContainer.visibility =
-            View.GONE
-
-        progressBar.visibility =
-            View.GONE
-    }
-
-    private suspend fun updateScanProgress(
-        stage: String,
-        current: Int,
-        total: Int
-    ) {
-
-        val safeTotal =
-            maxOf(
-                total,
-                1
-            )
-
-        val percentage =
-            (
-                    current.toDouble() /
-                            safeTotal.toDouble() *
-                            100.0
-                    )
-                .toInt()
-                .coerceIn(
-                    0,
-                    100
-                )
-
-        withContext(
-            Dispatchers.Main
-        ) {
-
-            if (
-                !isFinishing &&
-                !isDestroyed
-            ) {
-
-                scanningStageText.text =
-                    stage
-
-                scanningProgressBar.progress =
-                    percentage
-
-                scanningProgressText.text =
-                    "$percentage%  ($current / $total)"
-            }
-        }
-    }
-
-    private suspend fun updateStatusFromBackground(
-        message: String
-    ) {
-
-        withContext(
-            Dispatchers.Main
-        ) {
-
-            if (
-                !isFinishing &&
-                !isDestroyed
-            ) {
-
-                statusText.text =
-                    message
-            }
-        }
-    }
-
-    private fun openDuplicateResults(
+    private fun showScanResult(
         result: ScanResult
     ) {
 
-        val photoGroups =
-            ArrayList<ArrayList<DuplicateResultsActivity.DuplicateItem>>()
+        photoCountText.text =
+            "Photos: ${result.photos.size}"
 
-        result.photoDuplicateGroups.forEach { group ->
+        videoCountText.text =
+            "Videos: ${result.videos.size}"
 
-            val convertedGroup =
-                ArrayList<DuplicateResultsActivity.DuplicateItem>()
+        totalCountText.text =
+            "Total: ${
+                result.photos.size +
+                        result.videos.size
+            }"
 
-            group.forEach { mediaFile ->
-
-                convertedGroup.add(
-
-                    DuplicateResultsActivity.DuplicateItem(
-
-                        name =
-                            mediaFile.name,
-
-                        relativePath =
-                            mediaFile.relativePath,
-
-                        size =
-                            mediaFile.size,
-
-                        width =
-                            mediaFile.width,
-
-                        height =
-                            mediaFile.height,
-
-                        sha256 =
-                            mediaFile.sha256,
-
-                        uri =
-                            mediaFile.uri
-                    )
+        val exactDuplicateCount =
+            result.exactPhotoGroups.sumOf {
+                maxOf(
+                    0,
+                    it.size - 1
                 )
+            } +
+                    result.exactVideoGroups.sumOf {
+                        maxOf(
+                            0,
+                            it.size - 1
+                        )
+                    }
+
+        val similarCount =
+            result.similarPhotoGroups.size
+
+        val dateTimeCount =
+            result.dateTimePhotoGroups.size
+
+        statusText.text =
+            buildString {
+
+                append(
+                    "Scan complete. "
+                )
+
+                append(
+                    exactDuplicateCount
+                )
+
+                append(
+                    " exact duplicate files"
+                )
+
+                if (
+                    similarCount > 0
+                ) {
+
+                    append(
+                        " • "
+                    )
+
+                    append(
+                        similarCount
+                    )
+
+                    append(
+                        " similar photo groups"
+                    )
+                }
+
+                if (
+                    dateTimeCount > 0
+                ) {
+
+                    append(
+                        " • "
+                    )
+
+                    append(
+                        dateTimeCount
+                    )
+
+                    append(
+                        " date/time groups"
+                    )
+                }
             }
 
-            photoGroups.add(
-                convertedGroup
-            )
-        }
+        if (
+            result.exactPhotoGroups.isEmpty() &&
+            result.exactVideoGroups.isEmpty() &&
+            result.similarPhotoGroups.isEmpty() &&
+            result.dateTimePhotoGroups.isEmpty()
+        ) {
 
-        val videoGroups =
-            ArrayList<ArrayList<DuplicateResultsActivity.DuplicateItem>>()
+            Toast.makeText(
+                this,
+                "No duplicates, similar photos, or date/time groups found.",
+                Toast.LENGTH_LONG
+            ).show()
 
-        result.videoDuplicateGroups.forEach { group ->
-
-            val convertedGroup =
-                ArrayList<DuplicateResultsActivity.DuplicateItem>()
-
-            group.forEach { mediaFile ->
-
-                convertedGroup.add(
-
-                    DuplicateResultsActivity.DuplicateItem(
-
-                        name =
-                            mediaFile.name,
-
-                        relativePath =
-                            mediaFile.relativePath,
-
-                        size =
-                            mediaFile.size,
-
-                        width =
-                            mediaFile.width,
-
-                        height =
-                            mediaFile.height,
-
-                        sha256 =
-                            mediaFile.sha256,
-
-                        uri =
-                            mediaFile.uri
-                    )
-                )
-            }
-
-            videoGroups.add(
-                convertedGroup
-            )
+            return
         }
 
         val intent =
@@ -709,12 +2337,38 @@ class MainActivity : AppCompatActivity() {
 
         intent.putExtra(
             DuplicateResultsActivity.EXTRA_PHOTO_GROUPS,
-            photoGroups
+            ArrayList(
+                result.exactPhotoGroups.map {
+                    ArrayList(it)
+                }
+            )
         )
 
         intent.putExtra(
             DuplicateResultsActivity.EXTRA_VIDEO_GROUPS,
-            videoGroups
+            ArrayList(
+                result.exactVideoGroups.map {
+                    ArrayList(it)
+                }
+            )
+        )
+
+        intent.putExtra(
+            DuplicateResultsActivity.EXTRA_SIMILAR_PHOTO_GROUPS,
+            ArrayList(
+                result.similarPhotoGroups.map {
+                    ArrayList(it)
+                }
+            )
+        )
+
+        intent.putExtra(
+            DuplicateResultsActivity.EXTRA_DATE_TIME_PHOTO_GROUPS,
+            ArrayList(
+                result.dateTimePhotoGroups.map {
+                    ArrayList(it)
+                }
+            )
         )
 
         startActivity(
@@ -722,1269 +2376,74 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private suspend fun scanAndFindDuplicates(
-        selectedOnly: Boolean
-    ): ScanResult {
+    private fun MediaFile.toDuplicateItem(
+        sha256: String
+    ): DuplicateResultsActivity.DuplicateItem {
 
-        currentCoroutineContext().ensureActive()
-
-        updateStatusFromBackground(
-            "Reading photos..."
-        )
-
-        withContext(
-            Dispatchers.Main
-        ) {
-
-            scanningStageText.text =
-                "Reading photos..."
-
-            scanningProgressBar.progress =
-                0
-
-            scanningProgressText.text =
-                "0%"
-        }
-
-        val photos =
-            mutableListOf<MediaFile>()
-
-        val videos =
-            mutableListOf<MediaFile>()
-
-        scanPhotos(
-            photos,
-            selectedOnly
-        )
-
-        currentCoroutineContext().ensureActive()
-
-        withContext(
-            Dispatchers.Main
-        ) {
-
-            scanningStageText.text =
-                "Reading videos..."
-
-            scanningProgressBar.progress =
-                0
-
-            scanningProgressText.text =
-                "0%"
-        }
-
-        updateStatusFromBackground(
-            "Found ${photos.size} photos. Reading videos..."
-        )
-
-        scanVideos(
-            videos,
-            selectedOnly
-        )
-
-        currentCoroutineContext().ensureActive()
-
-        updateStatusFromBackground(
-            "Found ${photos.size} photos and ${videos.size} videos. Checking duplicates..."
-        )
-
-        /*
-         * First filter:
-         *
-         * Exact duplicates must have the same file size.
-         *
-         * Files with unique sizes never need hashing.
-         */
-        val photoCandidateIds =
-            photos
-                .groupBy {
-                    it.size
-                }
-                .values
-                .filter {
-                    it.size > 1
-                }
-                .asSequence()
-                .flatten()
-                .map {
-                    it.id
-                }
-                .toHashSet()
-
-        val videoCandidateIds =
-            videos
-                .groupBy {
-                    it.size
-                }
-                .values
-                .filter {
-                    it.size > 1
-                }
-                .asSequence()
-                .flatten()
-                .map {
-                    it.id
-                }
-                .toHashSet()
-
-        withContext(
-            Dispatchers.Main
-        ) {
-
-            scanningStageText.text =
-                "Quick-checking possible duplicate photos..."
-
-            scanningProgressBar.progress =
-                0
-
-            scanningProgressText.text =
-                "0%"
-        }
-
-        updateStatusFromBackground(
-            "Quick-checking ${photoCandidateIds.size} possible duplicate photos..."
-        )
-
-        val photosWithHash =
-            hashMediaFiles(
-                files =
-                    photos,
-
-                candidateIds =
-                    photoCandidateIds,
-
-                mediaName =
-                    "photos"
-            )
-
-        currentCoroutineContext().ensureActive()
-
-        withContext(
-            Dispatchers.Main
-        ) {
-
-            scanningStageText.text =
-                "Quick-checking possible duplicate videos..."
-
-            scanningProgressBar.progress =
-                0
-
-            scanningProgressText.text =
-                "0%"
-        }
-
-        updateStatusFromBackground(
-            "Quick-checking ${videoCandidateIds.size} possible duplicate videos..."
-        )
-
-        val videosWithHash =
-            hashMediaFiles(
-                files =
-                    videos,
-
-                candidateIds =
-                    videoCandidateIds,
-
-                mediaName =
-                    "videos"
-            )
-
-        currentCoroutineContext().ensureActive()
-
-        withContext(
-            Dispatchers.Main
-        ) {
-
-            scanningStageText.text =
-                "Grouping exact duplicates..."
-
-            scanningProgressBar.progress =
-                100
-
-            scanningProgressText.text =
-                "100%"
-        }
-
-        updateStatusFromBackground(
-            "Grouping exact duplicates..."
-        )
-
-        val photoDuplicateGroups =
-            findDuplicateGroups(
-                photosWithHash
-            )
-
-        val videoDuplicateGroups =
-            findDuplicateGroups(
-                videosWithHash
-            )
-
-        val photoDuplicateCount =
-            photoDuplicateGroups.sumOf {
-                it.size - 1
-            }
-
-        val videoDuplicateCount =
-            videoDuplicateGroups.sumOf {
-                it.size - 1
-            }
-
-        val photoRecoverableBytes =
-            photoDuplicateGroups.sumOf { group ->
-
-                group
-                    .drop(1)
-                    .sumOf {
-                        it.size
-                    }
-            }
-
-        val videoRecoverableBytes =
-            videoDuplicateGroups.sumOf { group ->
-
-                group
-                    .drop(1)
-                    .sumOf {
-                        it.size
-                    }
-            }
-
-        return ScanResult(
-
-            photos =
-                photosWithHash,
-
-            videos =
-                videosWithHash,
-
-            photoDuplicateGroups =
-                photoDuplicateGroups,
-
-            videoDuplicateGroups =
-                videoDuplicateGroups,
-
-            photoDuplicateCount =
-                photoDuplicateCount,
-
-            videoDuplicateCount =
-                videoDuplicateCount,
-
-            recoverableBytes =
-                photoRecoverableBytes +
-                        videoRecoverableBytes
+        return DuplicateResultsActivity.DuplicateItem(
+            name = name,
+            relativePath = relativePath,
+            size = size,
+            width = width,
+            height = height,
+            sha256 = sha256,
+            uri = uri.toString()
         )
     }
 
-    /*
-     * Two-stage duplicate checking:
-     *
-     * 1. Quick fingerprint:
-     *    Read only the first 128 KB.
-     *
-     * 2. Full SHA-256:
-     *    Only files with the same size AND
-     *    same quick fingerprint are fully hashed.
-     *
-     * This is a safe optimization:
-     *
-     * Different quick fingerprints mean the files
-     * cannot be identical.
-     *
-     * A matching quick fingerprint does NOT mean
-     * the files are duplicates, so full SHA-256
-     * is still required.
-     */
-    private suspend fun hashMediaFiles(
-        files: List<MediaFile>,
-        candidateIds: Set<Long>,
-        mediaName: String
-    ): List<MediaFile> {
-
-        if (
-            candidateIds.isEmpty()
-        ) {
-
-            withContext(
-                Dispatchers.Main
-            ) {
-
-                scanningProgressBar.progress =
-                    100
-
-                scanningProgressText.text =
-                    "100%"
-            }
-
-            return files
-        }
-
-        /*
-         * Quick fingerprint is calculated only for
-         * files that already have the same size as
-         * another file.
-         */
-        val quickFingerprintGroups =
-            mutableMapOf<String, MutableList<MediaFile>>()
-
-        var quickChecked =
-            0
-
-        val totalCandidates =
-            candidateIds.size
-
-        files.forEach { mediaFile ->
-
-            currentCoroutineContext()
-                .ensureActive()
-
-            if (
-                candidateIds.contains(
-                    mediaFile.id
-                )
-            ) {
-
-                val quickFingerprint =
-                    calculateQuickFingerprint(
-                        Uri.parse(
-                            mediaFile.uri
-                        )
-                    )
-
-                if (
-                    quickFingerprint.isNotEmpty()
-                ) {
-
-                    val key =
-                        "${mediaFile.size}:$quickFingerprint"
-
-                    quickFingerprintGroups
-                        .getOrPut(
-                            key
-                        ) {
-                            mutableListOf()
-                        }
-                        .add(
-                            mediaFile
-                        )
-                }
-
-                quickChecked++
-
-                if (
-                    quickChecked == 1 ||
-                    quickChecked % 10 == 0 ||
-                    quickChecked == totalCandidates
-                ) {
-
-                    updateScanProgress(
-                        stage =
-                            "Quick-checking $mediaName",
-
-                        current =
-                            quickChecked,
-
-                        total =
-                            totalCandidates
-                    )
-
-                    updateStatusFromBackground(
-                        "Quick-checking $mediaName: $quickChecked / $totalCandidates"
-                    )
-                }
-            }
-        }
-
-        /*
-         * Only quick-fingerprint groups containing
-         * more than one file need full SHA-256.
-         */
-        val fullHashCandidateIds =
-            quickFingerprintGroups
-                .values
-                .filter {
-                    it.size > 1
-                }
-                .asSequence()
-                .flatten()
-                .map {
-                    it.id
-                }
-                .toHashSet()
-
-        val result =
-            ArrayList<MediaFile>(
-                files.size
-            )
-
-        var fullHashChecked =
-            0
-
-        val totalFullHashCandidates =
-            fullHashCandidateIds.size
-
-        files.forEach { mediaFile ->
-
-            currentCoroutineContext()
-                .ensureActive()
-
-            if (
-                fullHashCandidateIds.contains(
-                    mediaFile.id
-                )
-            ) {
-
-                val hash =
-                    calculateSha256(
-                        Uri.parse(
-                            mediaFile.uri
-                        )
-                    )
-
-                result.add(
-                    mediaFile.copy(
-                        sha256 =
-                            hash
-                    )
-                )
-
-                fullHashChecked++
-
-                if (
-                    fullHashChecked == 1 ||
-                    fullHashChecked % 5 == 0 ||
-                    fullHashChecked ==
-                    totalFullHashCandidates
-                ) {
-
-                    updateScanProgress(
-                        stage =
-                            "Full-checking $mediaName",
-
-                        current =
-                            fullHashChecked,
-
-                        total =
-                            totalFullHashCandidates
-                    )
-
-                    updateStatusFromBackground(
-                        "Full-checking $mediaName: $fullHashChecked / $totalFullHashCandidates"
-                    )
-                }
-
-            } else {
-
-                result.add(
-                    mediaFile
-                )
-            }
-        }
-
-        withContext(
-            Dispatchers.Main
-        ) {
-
-            scanningProgressBar.progress =
-                100
-
-            scanningProgressText.text =
-                "100%"
-        }
-
-        return result
-    }
-
-    /*
-     * Reads only the beginning of the file.
-     *
-     * This is NOT used as proof of duplication.
-     * It is only a fast rejection test before
-     * expensive full SHA-256 hashing.
-     */
-    private suspend fun calculateQuickFingerprint(
-        uri: Uri
-    ): String {
-
-        return try {
-
-            val digest =
-                MessageDigest.getInstance(
-                    "SHA-256"
-                )
-
-            contentResolver
-                .openInputStream(uri)
-                ?.use { inputStream ->
-
-                    BufferedInputStream(
-                        inputStream
-                    ).use { input ->
-
-                        val buffer =
-                            ByteArray(
-                                QUICK_FINGERPRINT_SIZE
-                            )
-
-                        val bytesRead =
-                            input.read(
-                                buffer
-                            )
-
-                        if (
-                            bytesRead > 0
-                        ) {
-
-                            digest.update(
-                                buffer,
-                                0,
-                                bytesRead
-                            )
-
-                        } else {
-
-                            return ""
-                        }
-                    }
-
-                } ?: return ""
-
-            digest
-                .digest()
-                .joinToString("") {
-                    "%02x".format(it)
-                }
-
-        } catch (
-            cancellation: CancellationException
-        ) {
-
-            throw cancellation
-
-        } catch (_: Exception) {
-
-            ""
-        }
-    }
-
-    private fun findDuplicateGroups(
-        files: List<MediaFile>
-    ): List<List<MediaFile>> {
-
-        return files
-            .asSequence()
-            .filter {
-                it.sha256.isNotEmpty()
-            }
-            .groupBy {
-                it.sha256
-            }
-            .values
-            .filter {
-                it.size > 1
-            }
-            .map {
-                it.toList()
-            }
-            .toList()
-    }
-
-    private suspend fun calculateSha256(
-        uri: Uri
-    ): String {
-
-        return try {
-
-            val digest =
-                MessageDigest.getInstance(
-                    "SHA-256"
-                )
-
-            contentResolver
-                .openInputStream(uri)
-                ?.use { inputStream ->
-
-                    BufferedInputStream(
-                        inputStream
-                    ).use { input ->
-
-                        val buffer =
-                            ByteArray(
-                                1024 * 1024
-                            )
-
-                        while (true) {
-
-                            currentCoroutineContext()
-                                .ensureActive()
-
-                            val bytesRead =
-                                input.read(
-                                    buffer
-                                )
-
-                            if (
-                                bytesRead == -1
-                            ) {
-
-                                break
-                            }
-
-                            digest.update(
-                                buffer,
-                                0,
-                                bytesRead
-                            )
-                        }
-                    }
-
-                } ?: return ""
-
-            digest
-                .digest()
-                .joinToString("") {
-                    "%02x".format(it)
-                }
-
-        } catch (
-            cancellation: CancellationException
-        ) {
-
-            throw cancellation
-
-        } catch (_: Exception) {
-
-            ""
-        }
-    }
-
-    private suspend fun scanPhotos(
-        photos: MutableList<MediaFile>,
-        selectedOnly: Boolean
-    ) {
-
-        val projection =
-            arrayOf(
-
-                MediaStore.Images.Media._ID,
-
-                MediaStore.Images.Media.DISPLAY_NAME,
-
-                MediaStore.Images.Media.MIME_TYPE,
-
-                MediaStore.Images.Media.SIZE,
-
-                MediaStore.Images.Media.DATE_ADDED,
-
-                MediaStore.Images.Media.DATE_MODIFIED,
-
-                MediaStore.Images.Media.WIDTH,
-
-                MediaStore.Images.Media.HEIGHT,
-
-                MediaStore.Images.Media.RELATIVE_PATH
-            )
-
-        contentResolver.query(
-
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-
-            projection,
-
-            null,
-            null,
-            null
-
-        )?.use { cursor ->
-
-            val idColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media._ID
-                )
-
-            val nameColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media.DISPLAY_NAME
-                )
-
-            val mimeColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media.MIME_TYPE
-                )
-
-            val sizeColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media.SIZE
-                )
-
-            val dateAddedColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media.DATE_ADDED
-                )
-
-            val dateModifiedColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media.DATE_MODIFIED
-                )
-
-            val widthColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media.WIDTH
-                )
-
-            val heightColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media.HEIGHT
-                )
-
-            val relativePathColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media.RELATIVE_PATH
-                )
-
-            var scannedRows =
-                0
-
-            while (
-                cursor.moveToNext()
-            ) {
-
-                currentCoroutineContext()
-                    .ensureActive()
-
-                scannedRows++
-
-                val relativePath =
-                    cursor.getString(
-                        relativePathColumn
-                    ) ?: ""
-
-                if (
-                    selectedOnly &&
-                    !isPathSelected(
-                        relativePath
-                    )
-                ) {
-
-                    continue
-                }
-
-                val id =
-                    cursor.getLong(
-                        idColumn
-                    )
-
-                val uri =
-                    ContentUris.withAppendedId(
-
-                        MediaStore.Images.Media
-                            .EXTERNAL_CONTENT_URI,
-
-                        id
-                    )
-
-                photos.add(
-
-                    MediaFile(
-
-                        id =
-                            id,
-
-                        uri =
-                            uri.toString(),
-
-                        name =
-                            cursor.getString(
-                                nameColumn
-                            ) ?: "",
-
-                        mimeType =
-                            cursor.getString(
-                                mimeColumn
-                            ) ?: "",
-
-                        size =
-                            cursor.getLong(
-                                sizeColumn
-                            ),
-
-                        dateAdded =
-                            cursor.getLong(
-                                dateAddedColumn
-                            ),
-
-                        dateModified =
-                            cursor.getLong(
-                                dateModifiedColumn
-                            ),
-
-                        width =
-                            cursor.getInt(
-                                widthColumn
-                            ),
-
-                        height =
-                            cursor.getInt(
-                                heightColumn
-                            ),
-
-                        duration =
-                            0L,
-
-                        relativePath =
-                            relativePath,
-
-                        mediaType =
-                            MediaType.PHOTO
-                    )
-                )
-
-                if (
-                    scannedRows % 500 == 0
-                ) {
-
-                    updateStatusFromBackground(
-                        "Reading photos... ${photos.size} found"
-                    )
-                }
-            }
-        }
-    }
-
-    private suspend fun scanVideos(
-        videos: MutableList<MediaFile>,
-        selectedOnly: Boolean
-    ) {
-
-        val projection =
-            arrayOf(
-
-                MediaStore.Video.Media._ID,
-
-                MediaStore.Video.Media.DISPLAY_NAME,
-
-                MediaStore.Video.Media.MIME_TYPE,
-
-                MediaStore.Video.Media.SIZE,
-
-                MediaStore.Video.Media.DATE_ADDED,
-
-                MediaStore.Video.Media.DATE_MODIFIED,
-
-                MediaStore.Video.Media.WIDTH,
-
-                MediaStore.Video.Media.HEIGHT,
-
-                MediaStore.Video.Media.DURATION,
-
-                MediaStore.Video.Media.RELATIVE_PATH
-            )
-
-        contentResolver.query(
-
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-
-            projection,
-
-            null,
-            null,
-            null
-
-        )?.use { cursor ->
-
-            val idColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media._ID
-                )
-
-            val nameColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.DISPLAY_NAME
-                )
-
-            val mimeColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.MIME_TYPE
-                )
-
-            val sizeColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.SIZE
-                )
-
-            val dateAddedColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.DATE_ADDED
-                )
-
-            val dateModifiedColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.DATE_MODIFIED
-                )
-
-            val widthColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.WIDTH
-                )
-
-            val heightColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.HEIGHT
-                )
-
-            val durationColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.DURATION
-                )
-
-            val relativePathColumn =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.RELATIVE_PATH
-                )
-
-            var scannedRows =
-                0
-
-            while (
-                cursor.moveToNext()
-            ) {
-
-                currentCoroutineContext()
-                    .ensureActive()
-
-                scannedRows++
-
-                val relativePath =
-                    cursor.getString(
-                        relativePathColumn
-                    ) ?: ""
-
-                if (
-                    selectedOnly &&
-                    !isPathSelected(
-                        relativePath
-                    )
-                ) {
-
-                    continue
-                }
-
-                val id =
-                    cursor.getLong(
-                        idColumn
-                    )
-
-                val uri =
-                    ContentUris.withAppendedId(
-
-                        MediaStore.Video.Media
-                            .EXTERNAL_CONTENT_URI,
-
-                        id
-                    )
-
-                videos.add(
-
-                    MediaFile(
-
-                        id =
-                            id,
-
-                        uri =
-                            uri.toString(),
-
-                        name =
-                            cursor.getString(
-                                nameColumn
-                            ) ?: "",
-
-                        mimeType =
-                            cursor.getString(
-                                mimeColumn
-                            ) ?: "",
-
-                        size =
-                            cursor.getLong(
-                                sizeColumn
-                            ),
-
-                        dateAdded =
-                            cursor.getLong(
-                                dateAddedColumn
-                            ),
-
-                        dateModified =
-                            cursor.getLong(
-                                dateModifiedColumn
-                            ),
-
-                        width =
-                            cursor.getInt(
-                                widthColumn
-                            ),
-
-                        height =
-                            cursor.getInt(
-                                heightColumn
-                            ),
-
-                        duration =
-                            cursor.getLong(
-                                durationColumn
-                            ),
-
-                        relativePath =
-                            relativePath,
-
-                        mediaType =
-                            MediaType.VIDEO
-                    )
-                )
-
-                if (
-                    scannedRows % 500 == 0
-                ) {
-
-                    updateStatusFromBackground(
-                        "Reading videos... ${videos.size} found"
-                    )
-                }
-            }
-        }
-    }
-
-    private fun isPathSelected(
-        mediaStorePath: String
-    ): Boolean {
-
-        val normalizedMediaPath =
-            normalizePath(
-                mediaStorePath
-            )
-
-        return selectedFolderPaths.any {
-                selectedPath ->
-
-            val normalizedSelectedPath =
-                normalizePath(
-                    selectedPath
-                )
-
-            normalizedMediaPath ==
-                    normalizedSelectedPath ||
-
-                    normalizedMediaPath.startsWith(
-                        "$normalizedSelectedPath/"
-                    )
-        }
-    }
-
-    private fun normalizePath(
-        path: String
-    ): String {
-
-        return path
-            .replace(
-                "\\",
-                "/"
-            )
-            .trim('/')
-            .removePrefix(
-                "primary:"
-            )
-    }
-
-    private fun getFolderPathFromTreeUri(
-        treeUri: Uri
-    ): String {
-
-        return try {
-
-            val documentId =
-                DocumentsContract
-                    .getTreeDocumentId(
-                        treeUri
-                    )
-
-            documentId
-                .substringAfter(
-                    ":",
-                    documentId
-                )
-                .trim('/')
-
-        } catch (_: Exception) {
-
-            ""
-        }
-    }
-
-    private fun buildResultMessage(
-        result: ScanResult
-    ): String {
-
-        val totalDuplicates =
-            result.photoDuplicateCount +
-                    result.videoDuplicateCount
-
-        if (
-            totalDuplicates == 0
-        ) {
-
-            return getString(
-                R.string.no_duplicates
-            )
-        }
-
-        return getString(
-
-            R.string.duplicates_found,
-
-            totalDuplicates,
-
-            formatBytes(
-                result.recoverableBytes
-            )
-        )
-    }
-
-    private fun formatBytes(
-        bytes: Long
-    ): String {
-
-        if (
-            bytes < 1024
-        ) {
-
-            return "$bytes B"
-        }
-
-        if (
-            bytes <
-            1024L * 1024L
-        ) {
-
-            return String.format(
-                Locale.US,
-                "%.2f KB",
-                bytes / 1024.0
-            )
-        }
-
-        if (
-            bytes <
-            1024L *
-            1024L *
-            1024L
-        ) {
-
-            return String.format(
-                Locale.US,
-                "%.2f MB",
-                bytes /
-                        (
-                                1024.0 *
-                                        1024.0
-                                )
-            )
-        }
-
-        return String.format(
-            Locale.US,
-            "%.2f GB",
-            bytes /
-                    (
-                            1024.0 *
-                                    1024.0 *
-                                    1024.0
-                            )
-        )
-    }
-
-    override fun onDestroy() {
-
-        scanJob?.cancel()
-
-        super.onDestroy()
-    }
-
-    data class ScanResult(
-
-        val photos:
-        List<MediaFile>,
-
-        val videos:
-        List<MediaFile>,
-
-        val photoDuplicateGroups:
-        List<List<MediaFile>>,
-
-        val videoDuplicateGroups:
-        List<List<MediaFile>>,
-
-        val photoDuplicateCount:
-        Int,
-
-        val videoDuplicateCount:
-        Int,
-
-        val recoverableBytes:
-        Long
+    private data class MediaFile(
+        val uri: Uri,
+        val name: String,
+        val mimeType: String,
+        val size: Long,
+        val dateAdded: Long,
+        val dateModified: Long,
+        val width: Int,
+        val height: Int,
+        val duration: Long,
+        val relativePath: String,
+        val mediaType: MediaType
     )
 
-    data class MediaFile(
-
-        val id:
-        Long,
-
-        val uri:
-        String,
-
-        val name:
-        String,
-
-        val mimeType:
-        String,
-
-        val size:
-        Long,
-
-        val dateAdded:
-        Long,
-
-        val dateModified:
-        Long,
-
-        val width:
-        Int,
-
-        val height:
-        Int,
-
-        val duration:
-        Long,
-
-        val relativePath:
-        String,
-
-        val mediaType:
-        MediaType,
-
-        val sha256:
-        String = ""
+    private data class PhotoHash(
+        val photo: MediaFile,
+        val hash: Long
     )
 
-    enum class MediaType {
+    private data class ScanResult(
+        val photos: List<MediaFile>,
+        val videos: List<MediaFile>,
+        val exactPhotoGroups:
+        List<List<DuplicateResultsActivity.DuplicateItem>>,
+        val exactVideoGroups:
+        List<List<DuplicateResultsActivity.DuplicateItem>>,
+        val similarPhotoGroups:
+        List<List<DuplicateResultsActivity.DuplicateItem>>,
+        val dateTimePhotoGroups:
+        List<List<DuplicateResultsActivity.DuplicateItem>>
+    )
+
+    private enum class MediaType {
         PHOTO,
         VIDEO
     }
 
     companion object {
 
-        /*
-         * Number of bytes used for the fast
-         * pre-check before full SHA-256.
-         */
         private const val QUICK_FINGERPRINT_SIZE =
             128 * 1024
+
+        private const val PHASH_SIZE =
+            32
+
+        private const val DCT_SIZE =
+            8
+
+        private const val SIMILAR_PHOTO_THRESHOLD =
+            8
+
+        private const val DATE_TIME_WINDOW_SECONDS =
+            5 * 60L
     }
 }
+

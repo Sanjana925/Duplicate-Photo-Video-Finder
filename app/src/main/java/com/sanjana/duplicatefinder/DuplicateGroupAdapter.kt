@@ -3,7 +3,6 @@ package com.sanjana.duplicatefinder
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
-import android.provider.MediaStore
 import android.util.Size
 import android.view.LayoutInflater
 import android.view.View
@@ -28,8 +27,11 @@ class DuplicateGroupAdapter(
 
     data class GroupItem(
         val title: String,
-        val files: List<DuplicateResultsActivity.DuplicateItem>,
-        val isPhoto: Boolean
+        val files:
+        List<DuplicateResultsActivity.DuplicateItem>,
+        val isPhoto: Boolean,
+        val isSimilar: Boolean,
+        val isDateTime: Boolean
     )
 
     class GroupViewHolder(
@@ -37,13 +39,19 @@ class DuplicateGroupAdapter(
     ) : RecyclerView.ViewHolder(itemView) {
 
         val groupTitleText: TextView =
-            itemView.findViewById(R.id.groupTitleText)
+            itemView.findViewById(
+                R.id.groupTitleText
+            )
 
         val groupInfoText: TextView =
-            itemView.findViewById(R.id.groupInfoText)
+            itemView.findViewById(
+                R.id.groupInfoText
+            )
 
         val groupFilesContainer: LinearLayout =
-            itemView.findViewById(R.id.groupFilesContainer)
+            itemView.findViewById(
+                R.id.groupFilesContainer
+            )
     }
 
     override fun onCreateViewHolder(
@@ -52,13 +60,17 @@ class DuplicateGroupAdapter(
     ): GroupViewHolder {
 
         val view =
-            LayoutInflater.from(parent.context).inflate(
+            LayoutInflater.from(
+                parent.context
+            ).inflate(
                 R.layout.item_duplicate_group,
                 parent,
                 false
             )
 
-        return GroupViewHolder(view)
+        return GroupViewHolder(
+            view
+        )
     }
 
     override fun onBindViewHolder(
@@ -72,34 +84,88 @@ class DuplicateGroupAdapter(
         holder.groupTitleText.text =
             group.title
 
-        val recoverableBytes =
-            group.files
-                .drop(1)
-                .sumOf { it.size }
+        if (
+            group.isDateTime
+        ) {
 
-        holder.groupInfoText.text =
-            buildString {
+            holder.groupInfoText.text =
+                buildString {
 
-                append(group.files.size)
-                append(" copies • ")
-
-                append(
-                    formatBytes(
-                        recoverableBytes
+                    append(
+                        group.files.size
                     )
-                )
 
-                append(" recoverable")
-            }
+                    append(
+                        " photos close in time • review only"
+                    )
+                }
 
-        holder.groupFilesContainer.removeAllViews()
+        } else if (
+            group.isSimilar
+        ) {
 
-        group.files.forEachIndexed { index, file ->
+            holder.groupInfoText.text =
+                buildString {
+
+                    append(
+                        group.files.size
+                    )
+
+                    append(
+                        " visually similar photos • review only"
+                    )
+                }
+
+        } else {
+
+            val recoverableBytes =
+                group.files
+                    .drop(1)
+                    .sumOf {
+                        it.size
+                    }
+
+            holder.groupInfoText.text =
+                buildString {
+
+                    append(
+                        group.files.size
+                    )
+
+                    append(
+                        " copies • "
+                    )
+
+                    append(
+                        formatBytes(
+                            recoverableBytes
+                        )
+                    )
+
+                    append(
+                        " recoverable"
+                    )
+                }
+        }
+
+        holder.groupFilesContainer
+            .removeAllViews()
+
+        group.files.forEachIndexed {
+                index,
+                file ->
 
             addFileRow(
                 holder.groupFilesContainer,
                 file,
-                index == 0
+                isKeeper =
+                    !group.isSimilar &&
+                            !group.isDateTime &&
+                            index == 0,
+                isSimilar =
+                    group.isSimilar,
+                isDateTime =
+                    group.isDateTime
             )
         }
     }
@@ -109,12 +175,17 @@ class DuplicateGroupAdapter(
 
     private fun addFileRow(
         container: LinearLayout,
-        file: DuplicateResultsActivity.DuplicateItem,
-        isKeeper: Boolean
+        file:
+        DuplicateResultsActivity.DuplicateItem,
+        isKeeper: Boolean,
+        isSimilar: Boolean,
+        isDateTime: Boolean
     ) {
 
         val row =
-            LinearLayout(activity)
+            LinearLayout(
+                activity
+            )
 
         row.orientation =
             LinearLayout.HORIZONTAL
@@ -136,7 +207,9 @@ class DuplicateGroupAdapter(
             )
 
         val thumbnail =
-            ImageView(activity)
+            ImageView(
+                activity
+            )
 
         thumbnail.layoutParams =
             LinearLayout.LayoutParams(
@@ -163,7 +236,9 @@ class DuplicateGroupAdapter(
         )
 
         val infoContainer =
-            LinearLayout(activity)
+            LinearLayout(
+                activity
+            )
 
         infoContainer.orientation =
             LinearLayout.VERTICAL
@@ -182,13 +257,24 @@ class DuplicateGroupAdapter(
             infoParams
 
         val statusText =
-            TextView(activity)
+            TextView(
+                activity
+            )
 
         statusText.text =
-            if (isKeeper) {
-                "✓ KEEP"
-            } else {
-                "DELETE"
+            when {
+
+                isDateTime ->
+                    "🕐 CLOSE IN TIME — REVIEW"
+
+                isSimilar ->
+                    "SIMILAR — REVIEW"
+
+                isKeeper ->
+                    "✓ KEEP"
+
+                else ->
+                    "DELETE"
             }
 
         statusText.textSize =
@@ -201,9 +287,14 @@ class DuplicateGroupAdapter(
 
         statusText.setTextColor(
             activity.getColor(
-                if (isKeeper) {
+                if (
+                    isKeeper
+                ) {
+
                     R.color.primary
+
                 } else {
+
                     R.color.text_secondary
                 }
             )
@@ -214,7 +305,9 @@ class DuplicateGroupAdapter(
         )
 
         val nameText =
-            TextView(activity)
+            TextView(
+                activity
+            )
 
         nameText.text =
             file.name
@@ -241,7 +334,9 @@ class DuplicateGroupAdapter(
         )
 
         val pathText =
-            TextView(activity)
+            TextView(
+                activity
+            )
 
         pathText.text =
             file.relativePath.ifBlank {
@@ -268,7 +363,9 @@ class DuplicateGroupAdapter(
         )
 
         val detailsText =
-            TextView(activity)
+            TextView(
+                activity
+            )
 
         detailsText.text =
             buildString {
@@ -284,13 +381,21 @@ class DuplicateGroupAdapter(
                     file.height > 0
                 ) {
 
-                    append(" • ")
+                    append(
+                        " • "
+                    )
 
-                    append(file.width)
+                    append(
+                        file.width
+                    )
 
-                    append(" × ")
+                    append(
+                        " × "
+                    )
 
-                    append(file.height)
+                    append(
+                        file.height
+                    )
                 }
             }
 
@@ -307,20 +412,62 @@ class DuplicateGroupAdapter(
             detailsText
         )
 
+        if (
+            isDateTime
+        ) {
+
+            val reviewText =
+                TextView(
+                    activity
+                )
+
+            reviewText.text =
+                "Photos added close together"
+
+            reviewText.textSize =
+                11f
+
+            reviewText.setTextColor(
+                activity.getColor(
+                    R.color.text_secondary
+                )
+            )
+
+            infoContainer.addView(
+                reviewText
+            )
+        }
+
         row.addView(
             infoContainer
         )
 
-        if (!isKeeper) {
+        /*
+         * Exact duplicates:
+         *
+         * EVERY copy gets a checkbox.
+         *
+         * Similar and date/time groups remain
+         * review-only and cannot be deleted
+         * from this screen yet.
+         */
+        if (
+            !isSimilar &&
+            !isDateTime
+        ) {
 
             val checkBox =
-                CheckBox(activity)
+                CheckBox(
+                    activity
+                )
 
             val key =
                 file.uri
 
             checkBox.isChecked =
-                selectedFiles.contains(key)
+                selectedFiles.contains(
+                    key
+                )
 
             checkBox.contentDescription =
                 "Select ${file.name} for deletion"
@@ -329,13 +476,19 @@ class DuplicateGroupAdapter(
                     _,
                     checked ->
 
-                if (checked) {
+                if (
+                    checked
+                ) {
 
-                    selectedFiles.add(key)
+                    selectedFiles.add(
+                        key
+                    )
 
                 } else {
 
-                    selectedFiles.remove(key)
+                    selectedFiles.remove(
+                        key
+                    )
                 }
 
                 onSelectionChanged()
@@ -346,58 +499,73 @@ class DuplicateGroupAdapter(
             )
         }
 
-        container.addView(row)
+        container.addView(
+            row
+        )
     }
 
     private fun loadThumbnail(
-        file: DuplicateResultsActivity.DuplicateItem,
+        file:
+        DuplicateResultsActivity.DuplicateItem,
         imageView: ImageView
     ) {
 
-        if (file.uri.isBlank()) {
+        if (
+            file.uri.isBlank()
+        ) {
             return
         }
 
         val uri =
-            Uri.parse(file.uri)
+            Uri.parse(
+                file.uri
+            )
 
         CoroutineScope(
             Dispatchers.IO
         ).launch {
 
-            val bitmap = try {
+            val bitmap =
+                try {
 
-                if (
-                    Build.VERSION.SDK_INT >=
-                    Build.VERSION_CODES.Q
-                ) {
+                    if (
+                        Build.VERSION.SDK_INT >=
+                        Build.VERSION_CODES.Q
+                    ) {
 
-                    activity.contentResolver.loadThumbnail(
-                        uri,
-                        Size(
-                            dp(180),
-                            dp(180)
-                        ),
-                        null
-                    )
+                        activity.contentResolver
+                            .loadThumbnail(
+                                uri,
+                                Size(
+                                    dp(180),
+                                    dp(180)
+                                ),
+                                null
+                            )
 
-                } else {
+                    } else {
 
-                    activity.contentResolver
-                        .openInputStream(uri)
-                        ?.use { input ->
+                        activity.contentResolver
+                            .openInputStream(
+                                uri
+                            )
+                            ?.use { input ->
 
-                            BitmapFactory
-                                .decodeStream(input)
-                        }
+                                BitmapFactory
+                                    .decodeStream(
+                                        input
+                                    )
+                            }
+                    }
+
+                } catch (_: Exception) {
+
+                    null
                 }
 
-            } catch (_: Exception) {
-
-                null
-            }
-
-            if (bitmap != null) {
+            if (
+                bitmap != null
+            ) {
 
                 withContext(
                     Dispatchers.Main
@@ -417,11 +585,15 @@ class DuplicateGroupAdapter(
         }
     }
 
-    private fun dp(value: Int): Int {
+    private fun dp(
+        value: Int
+    ): Int {
 
         return (
                 value *
-                        activity.resources.displayMetrics.density
+                        activity.resources
+                            .displayMetrics
+                            .density
                 ).toInt()
     }
 
@@ -429,11 +601,17 @@ class DuplicateGroupAdapter(
         bytes: Long
     ): String {
 
-        if (bytes < 1024) {
+        if (
+            bytes < 1024
+        ) {
+
             return "$bytes B"
         }
 
-        if (bytes < 1024L * 1024L) {
+        if (
+            bytes <
+            1024L * 1024L
+        ) {
 
             return String.format(
                 Locale.US,
@@ -453,7 +631,10 @@ class DuplicateGroupAdapter(
                 Locale.US,
                 "%.2f MB",
                 bytes /
-                        (1024.0 * 1024.0)
+                        (
+                                1024.0 *
+                                        1024.0
+                                )
             )
         }
 
@@ -461,9 +642,12 @@ class DuplicateGroupAdapter(
             Locale.US,
             "%.2f GB",
             bytes /
-                    (1024.0 *
+                    (
                             1024.0 *
-                            1024.0)
+                                    1024.0 *
+                                    1024.0
+                            )
         )
     }
 }
+

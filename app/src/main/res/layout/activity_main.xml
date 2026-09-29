@@ -16,8 +16,6 @@
         android:paddingEnd="20dp"
         android:paddingBottom="32dp">
 
-        <!-- Header -->
-
         <TextView
             android:id="@+id/titleText"
             android:layout_width="match_parent"
@@ -35,8 +33,6 @@
             android:text="@string/home_subtitle"
             android:textColor="@color/text_secondary"
             android:textSize="15sp" />
-
-        <!-- Scan all card -->
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
@@ -82,8 +78,6 @@
             </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
-
-        <!-- Folder scan card -->
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
@@ -151,7 +145,74 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Scan progress -->
+        <!-- Exclude folders -->
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/card_stroke"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Exclude folders"
+                    android:textColor="@color/text_primary"
+                    android:textSize="19sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Folders added here will be ignored during scans."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/excludeFoldersButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="16dp"
+                    android:text="📂  EXCLUDE FOLDERS"
+                    android:textSize="14sp"
+                    app:cornerRadius="16dp"
+                    app:strokeWidth="1dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/clearExcludedFoldersButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="10dp"
+                    android:enabled="false"
+                    android:text="CLEAR EXCLUDED FOLDERS"
+                    android:textSize="13sp"
+                    app:cornerRadius="16dp"
+                    app:strokeWidth="1dp" />
+
+                <TextView
+                    android:id="@+id/excludedFoldersText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:background="@drawable/bg_info_box"
+                    android:padding="14dp"
+                    android:text="No excluded folders."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/scanningProgressContainer"
@@ -211,8 +272,6 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Scan status -->
-
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"
@@ -221,8 +280,6 @@
             android:text="@string/status_ready"
             android:textColor="@color/text_secondary"
             android:textSize="14sp" />
-
-        <!-- Media summary -->
 
         <TextView
             android:layout_width="match_parent"
@@ -351,8 +408,6 @@
             </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
-
-        <!-- Hidden legacy progress bar kept because MainActivity uses it -->
 
         <ProgressBar
             android:id="@+id/progressBar"

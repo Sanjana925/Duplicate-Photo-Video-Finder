@@ -4,6 +4,7 @@ import android.app.Activity
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -12,7 +13,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import android.provider.MediaStore
 import java.util.Locale
 
 class DuplicateResultsActivity : AppCompatActivity() {
@@ -26,17 +26,27 @@ class DuplicateResultsActivity : AppCompatActivity() {
     private val selectedFiles =
         mutableSetOf<String>()
 
+    /*
+     * ALL exact duplicate copies are kept here.
+     *
+     * This allows the user to decide which
+     * physical copy should be deleted.
+     */
     private val allDuplicateItems =
         mutableListOf<DuplicateItem>()
 
-    private lateinit var adapter: DuplicateGroupAdapter
+    private lateinit var adapter:
+            DuplicateGroupAdapter
 
     private val deleteLauncher =
         registerForActivityResult(
             ActivityResultContracts.StartIntentSenderForResult()
         ) { result ->
 
-            if (result.resultCode == Activity.RESULT_OK) {
+            if (
+                result.resultCode ==
+                Activity.RESULT_OK
+            ) {
 
                 handleSuccessfulDeletion()
 
@@ -53,7 +63,10 @@ class DuplicateResultsActivity : AppCompatActivity() {
     override fun onCreate(
         savedInstanceState: Bundle?
     ) {
-        super.onCreate(savedInstanceState)
+
+        super.onCreate(
+            savedInstanceState
+        )
 
         setContentView(
             R.layout.activity_duplicate_results
@@ -96,42 +109,73 @@ class DuplicateResultsActivity : AppCompatActivity() {
             ) as? ArrayList<ArrayList<DuplicateItem>>
                 ?: arrayListOf()
 
+        val similarPhotoGroups =
+            intent.getSerializableExtra(
+                EXTRA_SIMILAR_PHOTO_GROUPS
+            ) as? ArrayList<ArrayList<DuplicateItem>>
+                ?: arrayListOf()
+
+        val dateTimePhotoGroups =
+            intent.getSerializableExtra(
+                EXTRA_DATE_TIME_PHOTO_GROUPS
+            ) as? ArrayList<ArrayList<DuplicateItem>>
+                ?: arrayListOf()
+
         showSummary(
             photoGroups,
-            videoGroups
+            videoGroups,
+            similarPhotoGroups,
+            dateTimePhotoGroups
         )
 
         /*
-         * Only duplicate copies are deletable.
+         * Add EVERY exact duplicate file.
          *
-         * The first file in every group is treated
-         * as the copy to KEEP.
+         * The first copy starts unchecked.
+         * The other copies start checked.
          */
         photoGroups.forEach { group ->
 
-            if (group.size > 1) {
+            if (
+                group.size > 1
+            ) {
 
                 allDuplicateItems.addAll(
-                    group.drop(1)
+                    group
                 )
+
+                group.drop(1).forEach { file ->
+
+                    selectedFiles.add(
+                        file.uri
+                    )
+                }
             }
         }
 
         videoGroups.forEach { group ->
 
-            if (group.size > 1) {
+            if (
+                group.size > 1
+            ) {
 
                 allDuplicateItems.addAll(
-                    group.drop(1)
+                    group
                 )
+
+                group.drop(1).forEach { file ->
+
+                    selectedFiles.add(
+                        file.uri
+                    )
+                }
             }
         }
 
-        /*
-         * Prepare RecyclerView data.
-         */
         val groups =
-            mutableListOf<DuplicateGroupAdapter.GroupItem>()
+            mutableListOf<
+                    DuplicateGroupAdapter.GroupItem
+                    >()
 
         photoGroups.forEachIndexed {
                 index,
@@ -139,9 +183,12 @@ class DuplicateResultsActivity : AppCompatActivity() {
 
             groups.add(
                 DuplicateGroupAdapter.GroupItem(
-                    title = "📷 Photo Group ${index + 1}",
+                    title =
+                        "📷 Exact Photo Group ${index + 1}",
                     files = group,
-                    isPhoto = true
+                    isPhoto = true,
+                    isSimilar = false,
+                    isDateTime = false
                 )
             )
         }
@@ -152,16 +199,48 @@ class DuplicateResultsActivity : AppCompatActivity() {
 
             groups.add(
                 DuplicateGroupAdapter.GroupItem(
-                    title = "🎥 Video Group ${index + 1}",
+                    title =
+                        "🎥 Exact Video Group ${index + 1}",
                     files = group,
-                    isPhoto = false
+                    isPhoto = false,
+                    isSimilar = false,
+                    isDateTime = false
                 )
             )
         }
 
-        /*
-         * RecyclerView.
-         */
+        similarPhotoGroups.forEachIndexed {
+                index,
+                group ->
+
+            groups.add(
+                DuplicateGroupAdapter.GroupItem(
+                    title =
+                        "🖼️ Similar Photo Group ${index + 1}",
+                    files = group,
+                    isPhoto = true,
+                    isSimilar = true,
+                    isDateTime = false
+                )
+            )
+        }
+
+        dateTimePhotoGroups.forEachIndexed {
+                index,
+                group ->
+
+            groups.add(
+                DuplicateGroupAdapter.GroupItem(
+                    title =
+                        "🕐 Date/Time Photo Group ${index + 1}",
+                    files = group,
+                    isPhoto = true,
+                    isSimilar = false,
+                    isDateTime = true
+                )
+            )
+        }
+
         groupsRecyclerView.layoutManager =
             LinearLayoutManager(this)
 
@@ -178,19 +257,11 @@ class DuplicateResultsActivity : AppCompatActivity() {
         groupsRecyclerView.adapter =
             adapter
 
-        /*
-         * Select all / unselect all.
-         */
         selectAllButton.setOnClickListener {
-
             selectOrUnselectAll()
         }
 
-        /*
-         * Delete selected.
-         */
         deleteSelectedButton.setOnClickListener {
-
             deleteSelectedFiles()
         }
 
@@ -198,15 +269,21 @@ class DuplicateResultsActivity : AppCompatActivity() {
     }
 
     private fun showSummary(
-        photoGroups: List<List<DuplicateItem>>,
-        videoGroups: List<List<DuplicateItem>>
+        photoGroups:
+        List<List<DuplicateItem>>,
+        videoGroups:
+        List<List<DuplicateItem>>,
+        similarPhotoGroups:
+        List<List<DuplicateItem>>,
+        dateTimePhotoGroups:
+        List<List<DuplicateItem>>
     ) {
 
-        val totalGroups =
+        val exactGroups =
             photoGroups.size +
                     videoGroups.size
 
-        val totalDuplicates =
+        val exactDuplicates =
             photoGroups.sumOf {
                 maxOf(
                     0,
@@ -242,19 +319,35 @@ class DuplicateResultsActivity : AppCompatActivity() {
             buildString {
 
                 append(
-                    "Duplicate groups: "
+                    "Exact duplicate groups: "
                 )
 
                 append(
-                    totalGroups
+                    exactGroups
                 )
 
                 append(
-                    "\nDuplicate files: "
+                    "\nExact duplicate files: "
                 )
 
                 append(
-                    totalDuplicates
+                    exactDuplicates
+                )
+
+                append(
+                    "\nSimilar photo groups: "
+                )
+
+                append(
+                    similarPhotoGroups.size
+                )
+
+                append(
+                    "\nDate/time photo groups: "
+                )
+
+                append(
+                    dateTimePhotoGroups.size
                 )
 
                 append(
@@ -277,7 +370,9 @@ class DuplicateResultsActivity : AppCompatActivity() {
 
         selectedFiles.clear()
 
-        if (shouldSelect) {
+        if (
+            shouldSelect
+        ) {
 
             allDuplicateItems.forEach { file ->
 
@@ -329,20 +424,19 @@ class DuplicateResultsActivity : AppCompatActivity() {
                 )
             }
 
-        if (
-            selectedItems.size ==
-            allDuplicateItems.size &&
-            allDuplicateItems.isNotEmpty()
-        ) {
+        selectAllButton.text =
+            if (
+                selectedItems.size ==
+                allDuplicateItems.size &&
+                allDuplicateItems.isNotEmpty()
+            ) {
 
-            selectAllButton.text =
                 "UNSELECT ALL"
 
-        } else {
+            } else {
 
-            selectAllButton.text =
                 "SELECT ALL DUPLICATES"
-        }
+            }
 
         deleteSelectedButton.isEnabled =
             selectedItems.isNotEmpty()
@@ -370,7 +464,9 @@ class DuplicateResultsActivity : AppCompatActivity() {
                 )
             }
 
-        if (selectedItems.isEmpty()) {
+        if (
+            selectedItems.isEmpty()
+        ) {
 
             Toast.makeText(
                 this,
@@ -398,7 +494,9 @@ class DuplicateResultsActivity : AppCompatActivity() {
                 }
             }
 
-        if (uris.isEmpty()) {
+        if (
+            uris.isEmpty()
+        ) {
 
             Toast.makeText(
                 this,
@@ -612,21 +710,13 @@ class DuplicateResultsActivity : AppCompatActivity() {
     }
 
     data class DuplicateItem(
-
         val name: String,
-
         val relativePath: String,
-
         val size: Long,
-
         val width: Int,
-
         val height: Int,
-
         val sha256: String,
-
         val uri: String = ""
-
     ) : java.io.Serializable
 
     companion object {
@@ -636,5 +726,12 @@ class DuplicateResultsActivity : AppCompatActivity() {
 
         const val EXTRA_VIDEO_GROUPS =
             "video_duplicate_groups"
+
+        const val EXTRA_SIMILAR_PHOTO_GROUPS =
+            "similar_photo_groups"
+
+        const val EXTRA_DATE_TIME_PHOTO_GROUPS =
+            "date_time_photo_groups"
     }
 }
+
