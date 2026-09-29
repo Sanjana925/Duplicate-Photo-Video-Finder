@@ -20,8 +20,11 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
+                getDefaultProguardFile(
+                    "proguard-android-optimize.txt"
+                ),
                 "proguard-rules.pro"
             )
         }
@@ -51,9 +54,27 @@ dependencies {
     implementation(libs.androidx.navigation.fragment.ktx)
     implementation(libs.androidx.navigation.ui.ktx)
 
-    implementation("androidx.recyclerview:recyclerview:1.4.0")
+    implementation(
+        "androidx.recyclerview:recyclerview:1.4.0"
+    )
+
+    // Room database
+    implementation(
+        libs.androidx.room.runtime
+    )
+    implementation(libs.androidx.room3.common.jvm)
+
+    annotationProcessor(
+        "androidx.room:room-compiler:2.8.5"
+    )
 
     testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
+
+    androidTestImplementation(
+        libs.androidx.junit
+    )
+
+    androidTestImplementation(
+        libs.androidx.espresso.core
+    )
 }
