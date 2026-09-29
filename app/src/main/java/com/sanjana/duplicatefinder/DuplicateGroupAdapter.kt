@@ -1,9 +1,12 @@
 package com.sanjana.duplicatefinder
 
 import android.graphics.BitmapFactory
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
+import android.text.TextUtils
 import android.util.Size
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -53,11 +56,12 @@ class DuplicateGroupAdapter(
         viewType: Int
     ): GroupViewHolder {
 
-        val view = LayoutInflater.from(parent.context).inflate(
-            R.layout.item_duplicate_group,
-            parent,
-            false
-        )
+        val view =
+            LayoutInflater.from(parent.context).inflate(
+                R.layout.item_duplicate_group,
+                parent,
+                false
+            )
 
         return GroupViewHolder(view)
     }
@@ -67,9 +71,11 @@ class DuplicateGroupAdapter(
         position: Int
     ) {
 
-        val group = groups[position]
+        val group =
+            groups[position]
 
-        holder.groupTitleText.text = group.title
+        holder.groupTitleText.text =
+            group.title
 
         if (group.isDateTime) {
 
@@ -86,32 +92,55 @@ class DuplicateGroupAdapter(
             val recoverableBytes =
                 group.files
                     .drop(1)
-                    .sumOf { it.size }
+                    .sumOf {
+                        it.size
+                    }
 
-            holder.groupInfoText.text = buildString {
+            holder.groupInfoText.text =
+                buildString {
 
-                append(group.files.size)
-                append(" copies • ")
-                append(formatBytes(recoverableBytes))
-                append(" recoverable")
-            }
+                    append(
+                        group.files.size
+                    )
+
+                    append(
+                        " copies • "
+                    )
+
+                    append(
+                        formatBytes(
+                            recoverableBytes
+                        )
+                    )
+
+                    append(
+                        " recoverable"
+                    )
+                }
         }
 
         /*
          * RecyclerView reuses ViewHolders.
          *
-         * Remove old file rows before creating
-         * the rows for this group.
+         * Remove all old file rows before creating
+         * the rows for the current group.
          */
         holder.groupFilesContainer.removeAllViews()
 
         group.files.forEachIndexed { index, file ->
 
             addFileRow(
-                container = holder.groupFilesContainer,
-                file = file,
-                group = group,
-                index = index
+                container =
+                    holder.groupFilesContainer,
+
+                file =
+                    file,
+
+                group =
+                    group,
+
+                index =
+                    index
             )
         }
     }
@@ -120,19 +149,18 @@ class DuplicateGroupAdapter(
         groups.size
 
     /*
-     * Returns the groups currently held by this adapter.
+     * Returns the complete list of groups currently
+     * displayed by this adapter.
      */
     fun getGroups(): List<GroupItem> {
         return groups
     }
 
     /*
-     * Refresh only currently visible groups.
+     * Refresh selection state for visible rows.
      *
-     * Used by SELECT ALL / UNSELECT ALL.
-     *
-     * We intentionally do not call notifyDataSetChanged()
-     * because that would rebuild all thumbnails.
+     * We intentionally avoid notifyDataSetChanged()
+     * because that would rebuild every thumbnail.
      */
     fun refreshVisibleSelections() {
 
@@ -142,24 +170,27 @@ class DuplicateGroupAdapter(
             )
 
         if (recyclerView == null) {
-
             onSelectionChanged()
             return
         }
 
-        for (position in 0 until itemCount) {
+        for (
+        position in 0 until itemCount
+        ) {
 
             val holder =
                 recyclerView
-                    .findViewHolderForAdapterPosition(position)
-                        as? GroupViewHolder
+                    .findViewHolderForAdapterPosition(
+                        position
+                    ) as? GroupViewHolder
                     ?: continue
 
-            val group = groups[position]
+            val group =
+                groups[position]
 
             /*
              * Similar and date/time groups are
-             * review-only and have no checkboxes.
+             * review-only.
              */
             if (
                 group.isSimilar ||
@@ -171,19 +202,21 @@ class DuplicateGroupAdapter(
             val container =
                 holder.groupFilesContainer
 
-            /*
-             * One child row exists for every file.
-             */
             for (
             childIndex in 0 until container.childCount
             ) {
 
-                if (childIndex >= group.files.size) {
+                if (
+                    childIndex >=
+                    group.files.size
+                ) {
                     break
                 }
 
                 val row =
-                    container.getChildAt(childIndex)
+                    container.getChildAt(
+                        childIndex
+                    )
 
                 val checkBox =
                     row.findViewWithTag<CheckBox>(
@@ -195,16 +228,22 @@ class DuplicateGroupAdapter(
                 }
 
                 val file =
-                    group.files[childIndex]
+                    group.files[
+                        childIndex
+                    ]
 
                 val shouldBeChecked =
-                    selectedFiles.contains(file.uri)
+                    selectedFiles.contains(
+                        file.uri
+                    )
 
                 /*
-                 * Prevent programmatic isChecked changes
-                 * from triggering the listener.
+                 * Remove listener before changing
+                 * isChecked programmatically.
                  */
-                checkBox.setOnCheckedChangeListener(null)
+                checkBox.setOnCheckedChangeListener(
+                    null
+                )
 
                 checkBox.isChecked =
                     shouldBeChecked
@@ -214,17 +253,29 @@ class DuplicateGroupAdapter(
                         checked ->
 
                     handleIndividualSelection(
-                        group = group,
-                        file = file,
-                        checked = checked,
-                        checkBox = checkBox
+                        group =
+                            group,
+
+                        file =
+                            file,
+
+                        checked =
+                            checked,
+
+                        checkBox =
+                            checkBox
                     )
                 }
 
                 updateStatusText(
-                    row = row,
-                    group = group,
-                    file = file
+                    row =
+                        row,
+
+                    group =
+                        group,
+
+                    file =
+                        file
                 )
             }
         }
@@ -239,13 +290,14 @@ class DuplicateGroupAdapter(
         index: Int
     ) {
 
-        val row = LinearLayout(activity)
+        val row =
+            LinearLayout(activity)
 
         row.orientation =
             LinearLayout.HORIZONTAL
 
         row.gravity =
-            android.view.Gravity.CENTER_VERTICAL
+            Gravity.CENTER_VERTICAL
 
         row.setPadding(
             0,
@@ -261,7 +313,9 @@ class DuplicateGroupAdapter(
             )
 
         /*
+         * -------------------------------------------------
          * Thumbnail
+         * -------------------------------------------------
          */
         val thumbnail =
             ImageView(activity)
@@ -282,14 +336,21 @@ class DuplicateGroupAdapter(
         )
 
         loadThumbnail(
-            file = file,
-            imageView = thumbnail
+            file =
+                file,
+
+            imageView =
+                thumbnail
         )
 
-        row.addView(thumbnail)
+        row.addView(
+            thumbnail
+        )
 
         /*
+         * -------------------------------------------------
          * Information container
+         * -------------------------------------------------
          */
         val infoContainer =
             LinearLayout(activity)
@@ -311,7 +372,7 @@ class DuplicateGroupAdapter(
             infoParams
 
         /*
-         * KEEP / DELETE / REVIEW status
+         * Status
          */
         val statusText =
             TextView(activity)
@@ -324,10 +385,12 @@ class DuplicateGroupAdapter(
 
         statusText.setTypeface(
             null,
-            android.graphics.Typeface.BOLD
+            Typeface.BOLD
         )
 
-        infoContainer.addView(statusText)
+        infoContainer.addView(
+            statusText
+        )
 
         /*
          * File name
@@ -343,7 +406,7 @@ class DuplicateGroupAdapter(
 
         nameText.setTypeface(
             null,
-            android.graphics.Typeface.BOLD
+            Typeface.BOLD
         )
 
         nameText.setTextColor(
@@ -355,7 +418,9 @@ class DuplicateGroupAdapter(
         nameText.maxLines =
             2
 
-        infoContainer.addView(nameText)
+        infoContainer.addView(
+            nameText
+        )
 
         /*
          * File path
@@ -381,9 +446,11 @@ class DuplicateGroupAdapter(
             2
 
         pathText.ellipsize =
-            android.text.TextUtils.TruncateAt.MIDDLE
+            TextUtils.TruncateAt.MIDDLE
 
-        infoContainer.addView(pathText)
+        infoContainer.addView(
+            pathText
+        )
 
         /*
          * File details
@@ -395,7 +462,9 @@ class DuplicateGroupAdapter(
             buildString {
 
                 append(
-                    formatBytes(file.size)
+                    formatBytes(
+                        file.size
+                    )
                 )
 
                 if (
@@ -403,13 +472,21 @@ class DuplicateGroupAdapter(
                     file.height > 0
                 ) {
 
-                    append(" • ")
+                    append(
+                        " • "
+                    )
 
-                    append(file.width)
+                    append(
+                        file.width
+                    )
 
-                    append(" × ")
+                    append(
+                        " × "
+                    )
 
-                    append(file.height)
+                    append(
+                        file.height
+                    )
                 }
             }
 
@@ -422,7 +499,9 @@ class DuplicateGroupAdapter(
             )
         )
 
-        infoContainer.addView(detailsText)
+        infoContainer.addView(
+            detailsText
+        )
 
         /*
          * Date/time review information.
@@ -444,16 +523,23 @@ class DuplicateGroupAdapter(
                 )
             )
 
-            infoContainer.addView(reviewText)
+            infoContainer.addView(
+                reviewText
+            )
         }
 
-        row.addView(infoContainer)
+        row.addView(
+            infoContainer
+        )
 
         /*
-         * Only exact duplicate groups have
-         * selectable checkboxes.
+         * -------------------------------------------------
+         * Selection checkbox
+         * -------------------------------------------------
          *
-         * Similar and date/time groups are
+         * Only exact duplicate groups are selectable.
+         *
+         * Similar-photo and date/time groups remain
          * review-only.
          */
         if (
@@ -468,7 +554,9 @@ class DuplicateGroupAdapter(
                 CHECKBOX_TAG
 
             checkBox.isChecked =
-                selectedFiles.contains(file.uri)
+                selectedFiles.contains(
+                    file.uri
+                )
 
             checkBox.contentDescription =
                 "Select ${file.name} for deletion"
@@ -478,26 +566,42 @@ class DuplicateGroupAdapter(
                     checked ->
 
                 handleIndividualSelection(
-                    group = group,
-                    file = file,
-                    checked = checked,
-                    checkBox = checkBox
+                    group =
+                        group,
+
+                    file =
+                        file,
+
+                    checked =
+                        checked,
+
+                    checkBox =
+                        checkBox
                 )
             }
 
-            row.addView(checkBox)
+            row.addView(
+                checkBox
+            )
         }
 
         /*
-         * Set initial KEEP / DELETE / REVIEW status.
+         * Initial status.
          */
         updateStatusText(
-            row = row,
-            group = group,
-            file = file
+            row =
+                row,
+
+            group =
+                group,
+
+            file =
+                file
         )
 
-        container.addView(row)
+        container.addView(
+            row
+        )
     }
 
     private fun updateStatusText(
@@ -512,10 +616,14 @@ class DuplicateGroupAdapter(
             ) ?: return
 
         val isSelected =
-            selectedFiles.contains(file.uri)
+            selectedFiles.contains(
+                file.uri
+            )
 
         /*
-         * Date/time review group.
+         * -------------------------------------------------
+         * Date/time group
+         * -------------------------------------------------
          */
         if (group.isDateTime) {
 
@@ -532,7 +640,9 @@ class DuplicateGroupAdapter(
         }
 
         /*
-         * Similar-photo review group.
+         * -------------------------------------------------
+         * Similar-photo group
+         * -------------------------------------------------
          */
         if (group.isSimilar) {
 
@@ -549,7 +659,9 @@ class DuplicateGroupAdapter(
         }
 
         /*
-         * Exact duplicate.
+         * -------------------------------------------------
+         * Exact duplicate
+         * -------------------------------------------------
          */
         if (isSelected) {
 
@@ -583,9 +695,50 @@ class DuplicateGroupAdapter(
     ) {
 
         /*
-         * A group with one file cannot be a duplicate group.
+         * A group with one file cannot be an exact
+         * duplicate group.
          */
-        if (group.files.size <= 1) {
+        if (
+            group.files.size <= 1
+        ) {
+            return
+        }
+
+        /*
+         * Review-only groups must never become
+         * selectable.
+         */
+        if (
+            group.isSimilar ||
+            group.isDateTime
+        ) {
+
+            checkBox.setOnCheckedChangeListener(
+                null
+            )
+
+            checkBox.isChecked =
+                false
+
+            checkBox.setOnCheckedChangeListener {
+                    _,
+                    newChecked ->
+
+                handleIndividualSelection(
+                    group =
+                        group,
+
+                    file =
+                        file,
+
+                    checked =
+                        newChecked,
+
+                    checkBox =
+                        checkBox
+                )
+            }
+
             return
         }
 
@@ -610,15 +763,13 @@ class DuplicateGroupAdapter(
 
             /*
              * Never allow every physical copy
-             * in a group to be selected.
+             * in a duplicate group to be selected.
              *
              * Example:
              *
-             * 3 copies
-             * maximum selectable = 2
-             *
-             * 2 copies
-             * maximum selectable = 1
+             * 2 copies → maximum 1 selected
+             * 3 copies → maximum 2 selected
+             * 4 copies → maximum 3 selected
              */
             if (
                 !isAlreadySelected &&
@@ -626,7 +777,9 @@ class DuplicateGroupAdapter(
                 group.files.size - 1
             ) {
 
-                checkBox.setOnCheckedChangeListener(null)
+                checkBox.setOnCheckedChangeListener(
+                    null
+                )
 
                 checkBox.isChecked =
                     false
@@ -636,10 +789,17 @@ class DuplicateGroupAdapter(
                         newChecked ->
 
                     handleIndividualSelection(
-                        group = group,
-                        file = file,
-                        checked = newChecked,
-                        checkBox = checkBox
+                        group =
+                            group,
+
+                        file =
+                            file,
+
+                        checked =
+                            newChecked,
+
+                        checkBox =
+                            checkBox
                     )
                 }
 
@@ -652,36 +812,63 @@ class DuplicateGroupAdapter(
                 return
             }
 
-            selectedFiles.add(file.uri)
+            selectedFiles.add(
+                file.uri
+            )
 
         } else {
 
-            selectedFiles.remove(file.uri)
+            selectedFiles.remove(
+                file.uri
+            )
         }
 
         /*
-         * Update this row's KEEP / DELETE status.
+         * The checkbox is a child of the row.
          */
-        updateStatusText(
-            row = checkBox.parent as View,
-            group = group,
-            file = file
-        )
+        val row =
+            checkBox.parent as? View
+
+        if (row != null) {
+
+            updateStatusText(
+                row =
+                    row,
+
+                group =
+                    group,
+
+                file =
+                    file
+            )
+        }
 
         onSelectionChanged()
     }
 
+    /*
+     * Load an image/video thumbnail without blocking
+     * the UI thread.
+     */
     private fun loadThumbnail(
         file: DuplicateResultsActivity.DuplicateItem,
         imageView: ImageView
     ) {
 
-        if (file.uri.isBlank()) {
+        if (
+            file.uri.isBlank()
+        ) {
             return
         }
 
         val uri =
-            Uri.parse(file.uri)
+            try {
+                Uri.parse(
+                    file.uri
+                )
+            } catch (_: Exception) {
+                return
+            }
 
         CoroutineScope(
             Dispatchers.IO
@@ -712,7 +899,9 @@ class DuplicateGroupAdapter(
                             ?.use { input ->
 
                                 BitmapFactory
-                                    .decodeStream(input)
+                                    .decodeStream(
+                                        input
+                                    )
                             }
                     }
 
@@ -721,7 +910,9 @@ class DuplicateGroupAdapter(
                     null
                 }
 
-            if (bitmap != null) {
+            if (
+                bitmap != null
+            ) {
 
                 withContext(
                     Dispatchers.Main
@@ -757,7 +948,10 @@ class DuplicateGroupAdapter(
         bytes: Long
     ): String {
 
-        if (bytes < 1024) {
+        if (
+            bytes < 1024
+        ) {
+
             return "$bytes B"
         }
 
