@@ -62,37 +62,90 @@ class MainActivity : AppCompatActivity() {
     private lateinit var database: AppDatabase
     private lateinit var scanManager: ScanManager
 
+    /*
+     * IMPORTANT:
+     *
+     * This remembers what the user originally requested
+     * before Android showed the permission dialog.
+     *
+     * true  = Scan All
+     * false = Scan Selected Folders
+     */
+    private var pendingScanAll: Boolean? = null
+
     private val permissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
 
             val imageGranted =
-                permissions[
-                    Manifest.permission.READ_MEDIA_IMAGES
-                ] == true
+                if (
+                    Build.VERSION.SDK_INT >=
+                    Build.VERSION_CODES.TIRAMISU
+                ) {
+                    permissions[
+                        Manifest.permission.READ_MEDIA_IMAGES
+                    ] == true
+                } else {
+                    false
+                }
 
             val videoGranted =
-                permissions[
-                    Manifest.permission.READ_MEDIA_VIDEO
-                ] == true
+                if (
+                    Build.VERSION.SDK_INT >=
+                    Build.VERSION_CODES.TIRAMISU
+                ) {
+                    permissions[
+                        Manifest.permission.READ_MEDIA_VIDEO
+                    ] == true
+                } else {
+                    false
+                }
 
             val legacyGranted =
-                permissions[
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                ] == true
+                if (
+                    Build.VERSION.SDK_INT <
+                    Build.VERSION_CODES.TIRAMISU
+                ) {
+                    permissions[
+                        Manifest.permission.READ_EXTERNAL_STORAGE
+                    ] == true
+                } else {
+                    false
+                }
+
+            /*
+             * We need both image and video access because
+             * this application scans both media types.
+             */
+            val hasRequiredPermission =
+                if (
+                    Build.VERSION.SDK_INT >=
+                    Build.VERSION_CODES.TIRAMISU
+                ) {
+                    imageGranted && videoGranted
+                } else {
+                    legacyGranted
+                }
 
             if (
-                imageGranted ||
-                videoGranted ||
-                legacyGranted
+                hasRequiredPermission
             ) {
 
+                val scanAll =
+                    pendingScanAll ?: true
+
+                pendingScanAll =
+                    null
+
                 startScan(
-                    scanAll = true
+                    scanAll = scanAll
                 )
 
             } else {
+
+                pendingScanAll =
+                    null
 
                 Toast.makeText(
                     this,
@@ -134,6 +187,14 @@ class MainActivity : AppCompatActivity() {
                     "Folder added.",
                     Toast.LENGTH_SHORT
                 ).show()
+
+            } else {
+
+                Toast.makeText(
+                    this,
+                    "Folder already selected.",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
 
@@ -167,6 +228,14 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(
                     this,
                     "Folder excluded.",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+            } else {
+
+                Toast.makeText(
+                    this,
+                    "Folder already excluded.",
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -209,22 +278,34 @@ class MainActivity : AppCompatActivity() {
     private fun bindViews() {
 
         titleText =
-            findViewById(R.id.titleText)
+            findViewById(
+                R.id.titleText
+            )
 
         subtitleText =
-            findViewById(R.id.subtitleText)
+            findViewById(
+                R.id.subtitleText
+            )
 
         scanAllButton =
-            findViewById(R.id.scanAllButton)
+            findViewById(
+                R.id.scanAllButton
+            )
 
         selectFoldersButton =
-            findViewById(R.id.selectFoldersButton)
+            findViewById(
+                R.id.selectFoldersButton
+            )
 
         scanSelectedButton =
-            findViewById(R.id.scanSelectedButton)
+            findViewById(
+                R.id.scanSelectedButton
+            )
 
         excludeFoldersButton =
-            findViewById(R.id.excludeFoldersButton)
+            findViewById(
+                R.id.excludeFoldersButton
+            )
 
         clearExcludedFoldersButton =
             findViewById(
@@ -395,6 +476,13 @@ class MainActivity : AppCompatActivity() {
         scanAll: Boolean
     ) {
 
+        /*
+         * Remember the user's requested scan mode
+         * before opening Android's permission dialog.
+         */
+        pendingScanAll =
+            scanAll
+
         val permissions =
             requiredPermissions()
 
@@ -411,8 +499,11 @@ class MainActivity : AppCompatActivity() {
             missingPermissions.isEmpty()
         ) {
 
+            pendingScanAll =
+                null
+
             startScan(
-                scanAll
+                scanAll = scanAll
             )
 
         } else {
@@ -453,6 +544,23 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        /*
+         * Safety check for selected-folder scanning.
+         */
+        if (
+            !scanAll &&
+            selectedFolderUris.isEmpty()
+        ) {
+
+            Toast.makeText(
+                this,
+                "Select at least one folder first.",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            return
+        }
+
         setScanningUi(
             scanning = true
         )
@@ -460,18 +568,71 @@ class MainActivity : AppCompatActivity() {
         scanningProgressBar.progress =
             0
 
-        statusText.text =
-            "Preparing scan..."
+        scanningProgressText.text =
+            "0%"
 
+        scanningStageText.text =
+            if (scanAll) {
+                "Preparing full scan..."
+            } else {
+                "Preparing selected-folder scan..."
+            }
+
+        statusText.text =
+            if (scanAll) {
+                "Scanning all media..."
+            } else {
+                "Scanning selected folders..."
+            }
+
+        /*
+         * Convert the user's folder selections into
+         * MediaStore relative paths.
+         */
         val selectedPaths =
-            selectedFolderUris.map {
-                getTreeRelativePath(it)
+            if (scanAll) {
+                emptyList()
+            } else {
+                selectedFolderUris
+                    .map {
+                        getTreeRelativePath(it)
+                    }
+                    .filter {
+                        it.isNotBlank()
+                    }
             }
 
         val excludedPaths =
-            excludedFolderUris.map {
-                getTreeRelativePath(it)
-            }
+            excludedFolderUris
+                .map {
+                    getTreeRelativePath(it)
+                }
+                .filter {
+                    it.isNotBlank()
+                }
+
+        /*
+         * If the user selected folders but none could
+         * be converted into a valid path, don't perform
+         * a misleading empty scan.
+         */
+        if (
+            !scanAll &&
+            selectedPaths.isEmpty()
+        ) {
+
+            setScanningUi(
+                scanning = false
+            )
+
+            Toast.makeText(
+                this,
+                "Unable to read the selected folder path.",
+                Toast.LENGTH_LONG
+            ).show()
+
+            return
+        }
 
         scanJob =
             lifecycleScope.launch {
@@ -713,6 +874,20 @@ class MainActivity : AppCompatActivity() {
             scanJob?.isActive != true
     }
 
+    /**
+     * Convert an Android Storage Access Framework tree URI
+     * into a MediaStore relative path.
+     *
+     * Example:
+     *
+     * primary:DCIM
+     *      ↓
+     * DCIM
+     *
+     * primary:Pictures/Screenshots
+     *      ↓
+     * Pictures/Screenshots
+     */
     private fun getTreeRelativePath(
         treeUri: Uri
     ): String {
@@ -755,3 +930,4 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 }
+

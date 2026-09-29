@@ -2,6 +2,7 @@ package com.sanjana.duplicatefinder.scanner
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import com.sanjana.duplicatefinder.database.AppDatabase
@@ -21,149 +22,201 @@ class ScanManager(
     private val database: AppDatabase
 ) {
 
-    private val dao = database.mediaDao()
+    private val dao =
+        database.mediaDao()
 
     suspend fun scan(
         scanAll: Boolean,
         selectedFolderPaths: List<String>,
         excludedFolderPaths: List<String>,
         onProgress: (String, Int) -> Unit
-    ): ScanSummary = withContext(Dispatchers.IO) {
+    ): ScanSummary =
+        withContext(Dispatchers.IO) {
 
-        /*
-         * Phase 1 intentionally rebuilds the persistent index
-         * for each scan.
-         *
-         * Later we will add incremental indexing.
-         */
-        dao.deleteAll()
+            dao.deleteAll()
 
-        val scanTimestamp = System.currentTimeMillis()
-
-        onProgress(
-            "Indexing your media library...",
-            2
-        )
-
-        val photoCount = indexImages(
-            scanAll = scanAll,
-            selectedFolderPaths = selectedFolderPaths,
-            excludedFolderPaths = excludedFolderPaths,
-            scanTimestamp = scanTimestamp,
-            onProgress = onProgress
-        )
-
-        currentCoroutineContext().ensureActive()
-
-        val videoCount = indexVideos(
-            scanAll = scanAll,
-            selectedFolderPaths = selectedFolderPaths,
-            excludedFolderPaths = excludedFolderPaths,
-            scanTimestamp = scanTimestamp,
-            onProgress = onProgress
-        )
-
-        currentCoroutineContext().ensureActive()
-
-        onProgress(
-            "Finding same-size candidates...",
-            12
-        )
-
-        val candidateSizes =
-            dao.getDuplicateCandidateSizes()
-
-        if (candidateSizes.isEmpty()) {
+            val scanTimestamp =
+                System.currentTimeMillis()
 
             onProgress(
-                "No same-size candidates found.",
+                "Indexing your media library...",
+                2
+            )
+
+            val photoCount =
+                indexImages(
+                    scanAll =
+                        scanAll,
+
+                    selectedFolderPaths =
+                        selectedFolderPaths,
+
+                    excludedFolderPaths =
+                        excludedFolderPaths,
+
+                    scanTimestamp =
+                        scanTimestamp,
+
+                    onProgress =
+                        onProgress
+                )
+
+            currentCoroutineContext()
+                .ensureActive()
+
+            val videoCount =
+                indexVideos(
+                    scanAll =
+                        scanAll,
+
+                    selectedFolderPaths =
+                        selectedFolderPaths,
+
+                    excludedFolderPaths =
+                        excludedFolderPaths,
+
+                    scanTimestamp =
+                        scanTimestamp,
+
+                    onProgress =
+                        onProgress
+                )
+
+            currentCoroutineContext()
+                .ensureActive()
+
+            onProgress(
+                "Finding same-size candidates...",
+                12
+            )
+
+            val candidateSizes =
+                dao.getDuplicateCandidateSizes()
+
+            if (
+                candidateSizes.isEmpty()
+            ) {
+
+                onProgress(
+                    "No same-size candidates found.",
+                    100
+                )
+
+                return@withContext ScanSummary(
+                    photoCount =
+                        photoCount,
+
+                    videoCount =
+                        videoCount,
+
+                    candidateFiles =
+                        0
+                )
+            }
+
+            var candidateFiles =
+                0
+
+            candidateSizes.forEachIndexed {
+                    index,
+                    size ->
+
+                currentCoroutineContext()
+                    .ensureActive()
+
+                val files =
+                    dao.getMediaWithSize(
+                        size
+                    )
+
+                candidateFiles +=
+                    files.size
+
+                val baseProgress =
+                    12 +
+                            (
+                                    index.toDouble() /
+                                            candidateSizes
+                                                .size
+                                                .coerceAtLeast(1) *
+                                            38
+                                    ).toInt()
+
+                onProgress(
+                    "Quick-checking candidate files...",
+                    baseProgress.coerceIn(
+                        12,
+                        50
+                    )
+                )
+
+                processQuickFingerprints(
+                    files
+                )
+            }
+
+            currentCoroutineContext()
+                .ensureActive()
+
+            onProgress(
+                "Finding files with matching fingerprints...",
+                55
+            )
+
+            val fullHashCandidates =
+                getFullHashCandidates(
+                    candidateSizes
+                )
+
+            currentCoroutineContext()
+                .ensureActive()
+
+            if (
+                fullHashCandidates.isEmpty()
+            ) {
+
+                onProgress(
+                    "No exact duplicate candidates found.",
+                    100
+                )
+
+                return@withContext ScanSummary(
+                    photoCount =
+                        photoCount,
+
+                    videoCount =
+                        videoCount,
+
+                    candidateFiles =
+                        candidateFiles
+                )
+            }
+
+            processFullHashes(
+                fullHashCandidates,
+                onProgress
+            )
+
+            currentCoroutineContext()
+                .ensureActive()
+
+            onProgress(
+                "Finishing duplicate results...",
                 100
             )
 
-            return@withContext ScanSummary(
-                photoCount = photoCount,
-                videoCount = videoCount,
-                candidateFiles = 0
+            ScanSummary(
+                photoCount =
+                    photoCount,
+
+                videoCount =
+                    videoCount,
+
+                candidateFiles =
+                    candidateFiles
             )
         }
 
-        var candidateFiles = 0
-
-        candidateSizes.forEachIndexed { index, size ->
-
-            currentCoroutineContext().ensureActive()
-
-            val files =
-                dao.getMediaWithSize(size)
-
-            candidateFiles += files.size
-
-            val baseProgress =
-                12 +
-                        (
-                                index.toDouble() /
-                                        candidateSizes.size.coerceAtLeast(1) *
-                                        38
-                                ).toInt()
-
-            onProgress(
-                "Quick-checking candidate files...",
-                baseProgress.coerceIn(12, 50)
-            )
-
-            processQuickFingerprints(files)
-        }
-
-        currentCoroutineContext().ensureActive()
-
-        onProgress(
-            "Finding files with matching fingerprints...",
-            55
-        )
-
-        val fullHashCandidates =
-            getFullHashCandidates(candidateSizes)
-
-        currentCoroutineContext().ensureActive()
-
-        if (fullHashCandidates.isEmpty()) {
-
-            onProgress(
-                "No exact duplicate candidates found.",
-                100
-            )
-
-            return@withContext ScanSummary(
-                photoCount = photoCount,
-                videoCount = videoCount,
-                candidateFiles = candidateFiles
-            )
-        }
-
-        processFullHashes(
-            fullHashCandidates,
-            onProgress
-        )
-
-        currentCoroutineContext().ensureActive()
-
-        onProgress(
-            "Finishing duplicate results...",
-            100
-        )
-
-        ScanSummary(
-            photoCount = photoCount,
-            videoCount = videoCount,
-            candidateFiles = candidateFiles
-        )
-    }
-
-    /*
-     * FIX:
-     * This function is now suspend because it uses
-     * currentCoroutineContext().ensureActive().
-     */
     private suspend fun indexImages(
         scanAll: Boolean,
         selectedFolderPaths: List<String>,
@@ -175,20 +228,46 @@ class ScanManager(
         val collection =
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 
+        /*
+         * RELATIVE_PATH was introduced in Android 10.
+         *
+         * On Android 9 and below we simply don't request
+         * that column and use an empty path.
+         */
         val projection =
-            arrayOf(
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DISPLAY_NAME,
-                MediaStore.Images.Media.MIME_TYPE,
-                MediaStore.Images.Media.SIZE,
-                MediaStore.Images.Media.DATE_ADDED,
-                MediaStore.Images.Media.DATE_MODIFIED,
-                MediaStore.Images.Media.WIDTH,
-                MediaStore.Images.Media.HEIGHT,
-                MediaStore.Images.Media.RELATIVE_PATH
-            )
+            if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.Q
+            ) {
 
-        var count = 0
+                arrayOf(
+                    MediaStore.Images.Media._ID,
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    MediaStore.Images.Media.MIME_TYPE,
+                    MediaStore.Images.Media.SIZE,
+                    MediaStore.Images.Media.DATE_ADDED,
+                    MediaStore.Images.Media.DATE_MODIFIED,
+                    MediaStore.Images.Media.WIDTH,
+                    MediaStore.Images.Media.HEIGHT,
+                    MediaStore.Images.Media.RELATIVE_PATH
+                )
+
+            } else {
+
+                arrayOf(
+                    MediaStore.Images.Media._ID,
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    MediaStore.Images.Media.MIME_TYPE,
+                    MediaStore.Images.Media.SIZE,
+                    MediaStore.Images.Media.DATE_ADDED,
+                    MediaStore.Images.Media.DATE_MODIFIED,
+                    MediaStore.Images.Media.WIDTH,
+                    MediaStore.Images.Media.HEIGHT
+                )
+            }
+
+        var count =
+            0
 
         val batch =
             ArrayList<MediaEntity>(
@@ -244,30 +323,58 @@ class ScanManager(
                 )
 
             val pathIndex =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.Media.RELATIVE_PATH
-                )
+                if (
+                    Build.VERSION.SDK_INT >=
+                    Build.VERSION_CODES.Q
+                ) {
+                    cursor.getColumnIndex(
+                        MediaStore.Images.Media.RELATIVE_PATH
+                    )
+                } else {
+                    -1
+                }
 
-            while (cursor.moveToNext()) {
+            while (
+                cursor.moveToNext()
+            ) {
 
-                currentCoroutineContext().ensureActive()
+                currentCoroutineContext()
+                    .ensureActive()
 
                 val relativePath =
-                    cursor.getString(pathIndex) ?: ""
+                    if (
+                        pathIndex >= 0 &&
+                        !cursor.isNull(pathIndex)
+                    ) {
+                        cursor.getString(
+                            pathIndex
+                        ) ?: ""
+                    } else {
+                        ""
+                    }
 
                 if (
                     shouldSkipPath(
-                        relativePath,
-                        scanAll,
-                        selectedFolderPaths,
-                        excludedFolderPaths
+                        relativePath =
+                            relativePath,
+
+                        scanAll =
+                            scanAll,
+
+                        selectedFolderPaths =
+                            selectedFolderPaths,
+
+                        excludedFolderPaths =
+                            excludedFolderPaths
                     )
                 ) {
                     continue
                 }
 
                 val id =
-                    cursor.getLong(idIndex)
+                    cursor.getLong(
+                        idIndex
+                    )
 
                 val uri =
                     Uri.withAppendedPath(
@@ -275,23 +382,49 @@ class ScanManager(
                         id.toString()
                     )
 
-
                 batch.add(
                     MediaEntity(
+
                         uri.toString(),
-                        cursor.getString(nameIndex) ?: "Unknown",
-                        cursor.getString(mimeIndex) ?: "",
-                        cursor.getLong(sizeIndex),
-                        cursor.getLong(addedIndex),
-                        cursor.getLong(modifiedIndex),
-                        cursor.getInt(widthIndex),
-                        cursor.getInt(heightIndex),
+
+                        cursor.getString(
+                            nameIndex
+                        ) ?: "Unknown",
+
+                        cursor.getString(
+                            mimeIndex
+                        ) ?: "",
+
+                        cursor.getLong(
+                            sizeIndex
+                        ),
+
+                        cursor.getLong(
+                            addedIndex
+                        ),
+
+                        cursor.getLong(
+                            modifiedIndex
+                        ),
+
+                        cursor.getInt(
+                            widthIndex
+                        ),
+
+                        cursor.getInt(
+                            heightIndex
+                        ),
+
                         0L,
+
                         relativePath,
+
                         MEDIA_TYPE_PHOTO,
+
                         scanTimestamp
                     )
                 )
+
                 count++
 
                 if (
@@ -300,7 +433,9 @@ class ScanManager(
                 ) {
 
                     dao.insertAll(
-                        ArrayList(batch)
+                        ArrayList(
+                            batch
+                        )
                     )
 
                     batch.clear()
@@ -310,7 +445,9 @@ class ScanManager(
                 }
 
                 if (
-                    count % PROGRESS_UPDATE_INTERVAL == 0
+                    count %
+                    PROGRESS_UPDATE_INTERVAL ==
+                    0
                 ) {
 
                     onProgress(
@@ -321,10 +458,16 @@ class ScanManager(
             }
         }
 
-        currentCoroutineContext().ensureActive()
+        currentCoroutineContext()
+            .ensureActive()
 
-        if (batch.isNotEmpty()) {
-            dao.insertAll(batch)
+        if (
+            batch.isNotEmpty()
+        ) {
+
+            dao.insertAll(
+                batch
+            )
         }
 
         onProgress(
@@ -335,11 +478,6 @@ class ScanManager(
         return count
     }
 
-    /*
-     * FIX:
-     * This function is now suspend because it uses
-     * currentCoroutineContext().ensureActive().
-     */
     private suspend fun indexVideos(
         scanAll: Boolean,
         selectedFolderPaths: List<String>,
@@ -352,20 +490,41 @@ class ScanManager(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
 
         val projection =
-            arrayOf(
-                MediaStore.Video.Media._ID,
-                MediaStore.Video.Media.DISPLAY_NAME,
-                MediaStore.Video.Media.MIME_TYPE,
-                MediaStore.Video.Media.SIZE,
-                MediaStore.Video.Media.DATE_ADDED,
-                MediaStore.Video.Media.DATE_MODIFIED,
-                MediaStore.Video.Media.WIDTH,
-                MediaStore.Video.Media.HEIGHT,
-                MediaStore.Video.Media.DURATION,
-                MediaStore.Video.Media.RELATIVE_PATH
-            )
+            if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.Q
+            ) {
 
-        var count = 0
+                arrayOf(
+                    MediaStore.Video.Media._ID,
+                    MediaStore.Video.Media.DISPLAY_NAME,
+                    MediaStore.Video.Media.MIME_TYPE,
+                    MediaStore.Video.Media.SIZE,
+                    MediaStore.Video.Media.DATE_ADDED,
+                    MediaStore.Video.Media.DATE_MODIFIED,
+                    MediaStore.Video.Media.WIDTH,
+                    MediaStore.Video.Media.HEIGHT,
+                    MediaStore.Video.Media.DURATION,
+                    MediaStore.Video.Media.RELATIVE_PATH
+                )
+
+            } else {
+
+                arrayOf(
+                    MediaStore.Video.Media._ID,
+                    MediaStore.Video.Media.DISPLAY_NAME,
+                    MediaStore.Video.Media.MIME_TYPE,
+                    MediaStore.Video.Media.SIZE,
+                    MediaStore.Video.Media.DATE_ADDED,
+                    MediaStore.Video.Media.DATE_MODIFIED,
+                    MediaStore.Video.Media.WIDTH,
+                    MediaStore.Video.Media.HEIGHT,
+                    MediaStore.Video.Media.DURATION
+                )
+            }
+
+        var count =
+            0
 
         val batch =
             ArrayList<MediaEntity>(
@@ -426,30 +585,58 @@ class ScanManager(
                 )
 
             val pathIndex =
-                cursor.getColumnIndexOrThrow(
-                    MediaStore.Video.Media.RELATIVE_PATH
-                )
+                if (
+                    Build.VERSION.SDK_INT >=
+                    Build.VERSION_CODES.Q
+                ) {
+                    cursor.getColumnIndex(
+                        MediaStore.Video.Media.RELATIVE_PATH
+                    )
+                } else {
+                    -1
+                }
 
-            while (cursor.moveToNext()) {
+            while (
+                cursor.moveToNext()
+            ) {
 
-                currentCoroutineContext().ensureActive()
+                currentCoroutineContext()
+                    .ensureActive()
 
                 val relativePath =
-                    cursor.getString(pathIndex) ?: ""
+                    if (
+                        pathIndex >= 0 &&
+                        !cursor.isNull(pathIndex)
+                    ) {
+                        cursor.getString(
+                            pathIndex
+                        ) ?: ""
+                    } else {
+                        ""
+                    }
 
                 if (
                     shouldSkipPath(
-                        relativePath,
-                        scanAll,
-                        selectedFolderPaths,
-                        excludedFolderPaths
+                        relativePath =
+                            relativePath,
+
+                        scanAll =
+                            scanAll,
+
+                        selectedFolderPaths =
+                            selectedFolderPaths,
+
+                        excludedFolderPaths =
+                            excludedFolderPaths
                     )
                 ) {
                     continue
                 }
 
                 val id =
-                    cursor.getLong(idIndex)
+                    cursor.getLong(
+                        idIndex
+                    )
 
                 val uri =
                     Uri.withAppendedPath(
@@ -459,17 +646,45 @@ class ScanManager(
 
                 batch.add(
                     MediaEntity(
+
                         uri.toString(),
-                        cursor.getString(nameIndex) ?: "Unknown",
-                        cursor.getString(mimeIndex) ?: "",
-                        cursor.getLong(sizeIndex),
-                        cursor.getLong(addedIndex),
-                        cursor.getLong(modifiedIndex),
-                        cursor.getInt(widthIndex),
-                        cursor.getInt(heightIndex),
-                        cursor.getLong(durationIndex),
+
+                        cursor.getString(
+                            nameIndex
+                        ) ?: "Unknown",
+
+                        cursor.getString(
+                            mimeIndex
+                        ) ?: "",
+
+                        cursor.getLong(
+                            sizeIndex
+                        ),
+
+                        cursor.getLong(
+                            addedIndex
+                        ),
+
+                        cursor.getLong(
+                            modifiedIndex
+                        ),
+
+                        cursor.getInt(
+                            widthIndex
+                        ),
+
+                        cursor.getInt(
+                            heightIndex
+                        ),
+
+                        cursor.getLong(
+                            durationIndex
+                        ),
+
                         relativePath,
+
                         MEDIA_TYPE_VIDEO,
+
                         scanTimestamp
                     )
                 )
@@ -482,7 +697,9 @@ class ScanManager(
                 ) {
 
                     dao.insertAll(
-                        ArrayList(batch)
+                        ArrayList(
+                            batch
+                        )
                     )
 
                     batch.clear()
@@ -492,7 +709,9 @@ class ScanManager(
                 }
 
                 if (
-                    count % PROGRESS_UPDATE_INTERVAL == 0
+                    count %
+                    PROGRESS_UPDATE_INTERVAL ==
+                    0
                 ) {
 
                     onProgress(
@@ -503,10 +722,16 @@ class ScanManager(
             }
         }
 
-        currentCoroutineContext().ensureActive()
+        currentCoroutineContext()
+            .ensureActive()
 
-        if (batch.isNotEmpty()) {
-            dao.insertAll(batch)
+        if (
+            batch.isNotEmpty()
+        ) {
+
+            dao.insertAll(
+                batch
+            )
         }
 
         onProgress(
@@ -519,39 +744,46 @@ class ScanManager(
 
     private suspend fun processQuickFingerprints(
         files: List<MediaEntity>
-    ) = coroutineScope {
+    ) =
+        coroutineScope {
 
-        files
-            .chunked(HASH_BATCH_SIZE)
-            .forEach { batch ->
+            files
+                .chunked(
+                    HASH_BATCH_SIZE
+                )
+                .forEach { batch ->
 
-                currentCoroutineContext()
-                    .ensureActive()
+                    currentCoroutineContext()
+                        .ensureActive()
 
-                batch
-                    .map { file ->
+                    batch
+                        .map { file ->
 
-                        async(Dispatchers.IO) {
-
-                            val fingerprint =
-                                calculateQuickFingerprint(
-                                    Uri.parse(file.uri)
-                                )
-
-                            if (
-                                fingerprint != null
+                            async(
+                                Dispatchers.IO
                             ) {
 
-                                dao.updateQuickFingerprint(
-                                    file.uri,
-                                    fingerprint
-                                )
+                                val fingerprint =
+                                    calculateQuickFingerprint(
+                                        Uri.parse(
+                                            file.uri
+                                        )
+                                    )
+
+                                if (
+                                    fingerprint != null
+                                ) {
+
+                                    dao.updateQuickFingerprint(
+                                        file.uri,
+                                        fingerprint
+                                    )
+                                }
                             }
                         }
-                    }
-                    .awaitAll()
-            }
-    }
+                        .awaitAll()
+                }
+        }
 
     private suspend fun getFullHashCandidates(
         candidateSizes: List<Long>
@@ -560,20 +792,17 @@ class ScanManager(
         val result =
             ArrayList<MediaEntity>()
 
-        /*
-         * We only retain files that share:
-         *
-         * size + quick fingerprint
-         *
-         * We do this one size group at a time.
-         */
-        for (size in candidateSizes) {
+        for (
+        size in candidateSizes
+        ) {
 
             currentCoroutineContext()
                 .ensureActive()
 
             val files =
-                dao.getMediaWithSize(size)
+                dao.getMediaWithSize(
+                    size
+                )
 
             val grouped =
                 files
@@ -590,7 +819,9 @@ class ScanManager(
                 }
                 .forEach { group ->
 
-                    result.addAll(group)
+                    result.addAll(
+                        group
+                    )
                 }
         }
 
@@ -600,61 +831,85 @@ class ScanManager(
     private suspend fun processFullHashes(
         files: List<MediaEntity>,
         onProgress: (String, Int) -> Unit
-    ) = coroutineScope {
+    ) =
+        coroutineScope {
 
-        val total =
-            files.size
+            val total =
+                files.size
 
-        var processed =
-            0
+            var processed =
+                0
 
-        files
-            .chunked(HASH_BATCH_SIZE)
-            .forEach { batch ->
+            files
+                .chunked(
+                    HASH_BATCH_SIZE
+                )
+                .forEach { batch ->
 
-                currentCoroutineContext()
-                    .ensureActive()
+                    currentCoroutineContext()
+                        .ensureActive()
 
-                batch
-                    .map { file ->
+                    batch
+                        .map { file ->
 
-                        async(Dispatchers.IO) {
-
-                            val sha256 =
-                                calculateSha256(
-                                    Uri.parse(file.uri)
-                                )
-
-                            if (
-                                sha256 != null
+                            async(
+                                Dispatchers.IO
                             ) {
 
-                                dao.updateSha256(
-                                    file.uri,
-                                    sha256
-                                )
+                                val sha256 =
+                                    calculateSha256(
+                                        Uri.parse(
+                                            file.uri
+                                        )
+                                    )
+
+                                if (
+                                    sha256 != null
+                                ) {
+
+                                    dao.updateSha256(
+                                        file.uri,
+                                        sha256
+                                    )
+                                }
                             }
                         }
-                    }
-                    .awaitAll()
+                        .awaitAll()
 
-                processed += batch.size
+                    processed +=
+                        batch.size
 
-                val progress =
-                    55 +
-                            (
-                                    processed.toDouble() /
-                                            total.coerceAtLeast(1) *
-                                            45
-                                    ).toInt()
+                    val progress =
+                        55 +
+                                (
+                                        processed.toDouble() /
+                                                total
+                                                    .coerceAtLeast(
+                                                        1
+                                                    ) *
+                                                45
+                                        ).toInt()
 
-                onProgress(
-                    "Verifying exact duplicates... $processed / $total",
-                    progress.coerceIn(55, 100)
-                )
-            }
-    }
+                    onProgress(
+                        "Verifying exact duplicates... $processed / $total",
+                        progress.coerceIn(
+                            55,
+                            100
+                        )
+                    )
+                }
+        }
 
+    /**
+     * Decide whether a MediaStore item should be skipped.
+     *
+     * Rules:
+     *
+     * 1. Excluded folders always win.
+     * 2. Scan All means everything except exclusions.
+     * 3. Selected-folder scanning requires the media item
+     *    to be inside one of the selected folders.
+     */
     private fun shouldSkipPath(
         relativePath: String,
         scanAll: Boolean,
@@ -663,37 +918,77 @@ class ScanManager(
     ): Boolean {
 
         val normalized =
-            normalizePath(relativePath)
+            normalizePath(
+                relativePath
+            )
 
-        val excluded =
+        /*
+         * Excluded folders always take priority.
+         */
+        val isExcluded =
             excludedFolderPaths.any { excludedPath ->
 
                 val path =
-                    normalizePath(excludedPath)
+                    normalizePath(
+                        excludedPath
+                    )
 
                 path.isNotBlank() &&
                         (
                                 normalized == path ||
-                                        normalized.startsWith("$path/")
+                                        normalized.startsWith(
+                                            "$path/"
+                                        )
                                 )
             }
 
-        if (excluded) {
+        if (
+            isExcluded
+        ) {
             return true
         }
 
-        if (scanAll) {
+        /*
+         * Scan All:
+         *
+         * Everything is included unless explicitly
+         * excluded above.
+         */
+        if (
+            scanAll
+        ) {
             return false
+        }
+
+        /*
+         * Selected-folder scan:
+         *
+         * The media item's relative path must be the
+         * selected folder itself or a child of it.
+         */
+        if (
+            selectedFolderPaths.isEmpty()
+        ) {
+            return true
         }
 
         return !selectedFolderPaths.any { selectedPath ->
 
             val path =
-                normalizePath(selectedPath)
+                normalizePath(
+                    selectedPath
+                )
 
-            path.isBlank() ||
-                    normalized == path ||
-                    normalized.startsWith("$path/")
+            if (
+                path.isBlank()
+            ) {
+                false
+            } else {
+                normalized == path ||
+                        normalized.startsWith(
+                            "$path/"
+                        )
+            }
         }
     }
 
@@ -702,7 +997,16 @@ class ScanManager(
     ): String {
 
         return path
+            .replace(
+                '\\',
+                '/'
+            )
+            .trim()
             .trim('/')
+            .replace(
+                Regex("/+"),
+                "/"
+            )
             .lowercase()
     }
 
@@ -718,13 +1022,19 @@ class ScanManager(
                 )
 
             val descriptor =
-                contentResolver.openFileDescriptor(
-                    uri,
-                    "r"
-                )
+                contentResolver
+                    .openFileDescriptor(
+                        uri,
+                        "r"
+                    )
 
-            if (descriptor == null) {
-                return calculateQuickFingerprintFallback(uri)
+            if (
+                descriptor == null
+            ) {
+
+                return calculateQuickFingerprintFallback(
+                    uri
+                )
             }
 
             descriptor.use { parcelFileDescriptor ->
@@ -740,9 +1050,15 @@ class ScanManager(
                         channel.size()
 
                     val sampleSize =
-                        QUICK_SAMPLE_SIZE.toLong()
+                        QUICK_SAMPLE_SIZE
+                            .toLong()
 
-                    channel.position(0L)
+                    /*
+                     * Read beginning of file.
+                     */
+                    channel.position(
+                        0L
+                    )
 
                     val firstBuffer =
                         ByteArray(
@@ -750,9 +1066,13 @@ class ScanManager(
                         )
 
                     val firstRead =
-                        input.read(firstBuffer)
+                        input.read(
+                            firstBuffer
+                        )
 
-                    if (firstRead > 0) {
+                    if (
+                        firstRead > 0
+                    ) {
 
                         digest.update(
                             firstBuffer,
@@ -761,13 +1081,26 @@ class ScanManager(
                         )
                     }
 
-                    if (fileSize > sampleSize) {
+                    /*
+                     * Read end of file as well.
+                     *
+                     * This makes the quick fingerprint
+                     * much more useful for videos and
+                     * large files.
+                     */
+                    if (
+                        fileSize >
+                        sampleSize
+                    ) {
 
                         val lastPosition =
                             (
                                     fileSize -
                                             sampleSize
-                                    ).coerceAtLeast(0L)
+                                    )
+                                .coerceAtLeast(
+                                    0L
+                                )
 
                         channel.position(
                             lastPosition
@@ -779,9 +1112,13 @@ class ScanManager(
                             )
 
                         val lastRead =
-                            input.read(lastBuffer)
+                            input.read(
+                                lastBuffer
+                            )
 
-                        if (lastRead > 0) {
+                        if (
+                            lastRead > 0
+                        ) {
 
                             digest.update(
                                 lastBuffer,
@@ -793,11 +1130,15 @@ class ScanManager(
                 }
             }
 
-            digest.digest().toHex()
+            digest
+                .digest()
+                .toHex()
 
         } catch (_: Exception) {
 
-            calculateQuickFingerprintFallback(uri)
+            calculateQuickFingerprintFallback(
+                uri
+            )
         }
     }
 
@@ -813,7 +1154,9 @@ class ScanManager(
                 )
 
             contentResolver
-                .openInputStream(uri)
+                .openInputStream(
+                    uri
+                )
                 ?.use { input ->
 
                     val buffer =
@@ -824,31 +1167,40 @@ class ScanManager(
                     var remaining =
                         QUICK_SAMPLE_SIZE
 
-                    while (remaining > 0) {
+                    while (
+                        remaining > 0
+                    ) {
 
                         val read =
                             input.read(
                                 buffer,
-                                QUICK_SAMPLE_SIZE - remaining,
+                                QUICK_SAMPLE_SIZE -
+                                        remaining,
                                 remaining
                             )
 
-                        if (read <= 0) {
+                        if (
+                            read <= 0
+                        ) {
                             break
                         }
 
                         digest.update(
                             buffer,
-                            QUICK_SAMPLE_SIZE - remaining,
+                            QUICK_SAMPLE_SIZE -
+                                    remaining,
                             read
                         )
 
-                        remaining -= read
+                        remaining -=
+                            read
                     }
                 }
                 ?: return null
 
-            digest.digest().toHex()
+            digest
+                .digest()
+                .toHex()
 
         } catch (_: Exception) {
 
@@ -868,7 +1220,9 @@ class ScanManager(
                 )
 
             contentResolver
-                .openInputStream(uri)
+                .openInputStream(
+                    uri
+                )
                 ?.use { input ->
 
                     val buffer =
@@ -879,9 +1233,13 @@ class ScanManager(
                     while (true) {
 
                         val read =
-                            input.read(buffer)
+                            input.read(
+                                buffer
+                            )
 
-                        if (read <= 0) {
+                        if (
+                            read <= 0
+                        ) {
                             break
                         }
 
@@ -894,7 +1252,9 @@ class ScanManager(
                 }
                 ?: return null
 
-            digest.digest().toHex()
+            digest
+                .digest()
+                .toHex()
 
         } catch (_: Exception) {
 
@@ -936,9 +1296,13 @@ class ScanManager(
 private fun ByteArray.toHex(): String {
 
     val result =
-        StringBuilder(size * 2)
+        StringBuilder(
+            size * 2
+        )
 
-    for (byte in this) {
+    for (
+    byte in this
+    ) {
 
         result.append(
             "%02x".format(
@@ -949,3 +1313,4 @@ private fun ByteArray.toHex(): String {
 
     return result.toString()
 }
+
