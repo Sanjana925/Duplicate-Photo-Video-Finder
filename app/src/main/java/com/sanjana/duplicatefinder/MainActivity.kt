@@ -17,10 +17,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.sanjana.duplicatefinder.database.AppDatabase
-import com.sanjana.duplicatefinder.scanner.ScanManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -60,13 +60,10 @@ class MainActivity : AppCompatActivity() {
     private var scanJob: Job? = null
 
     private lateinit var database: AppDatabase
-    private lateinit var scanManager: ScanManager
 
     /*
-     * IMPORTANT:
-     *
-     * This remembers what the user originally requested
-     * before Android showed the permission dialog.
+     * Remembers what the user requested before Android
+     * shows the permission dialog.
      *
      * true  = Scan All
      * false = Scan Selected Folders
@@ -114,10 +111,6 @@ class MainActivity : AppCompatActivity() {
                     false
                 }
 
-            /*
-             * We need both image and video access because
-             * this application scans both media types.
-             */
             val hasRequiredPermission =
                 if (
                     Build.VERSION.SDK_INT >=
@@ -128,24 +121,20 @@ class MainActivity : AppCompatActivity() {
                     legacyGranted
                 }
 
-            if (
-                hasRequiredPermission
-            ) {
+            if (hasRequiredPermission) {
 
                 val scanAll =
                     pendingScanAll ?: true
 
-                pendingScanAll =
-                    null
+                pendingScanAll = null
 
                 startScan(
-                    scanAll = scanAll
+                    scanAll
                 )
 
             } else {
 
-                pendingScanAll =
-                    null
+                pendingScanAll = null
 
                 Toast.makeText(
                     this,
@@ -174,9 +163,7 @@ class MainActivity : AppCompatActivity() {
             } catch (_: Exception) {
             }
 
-            if (
-                !selectedFolderUris.contains(uri)
-            ) {
+            if (!selectedFolderUris.contains(uri)) {
 
                 selectedFolderUris.add(uri)
 
@@ -217,9 +204,7 @@ class MainActivity : AppCompatActivity() {
             } catch (_: Exception) {
             }
 
-            if (
-                !excludedFolderUris.contains(uri)
-            ) {
+            if (!excludedFolderUris.contains(uri)) {
 
                 excludedFolderUris.add(uri)
 
@@ -254,17 +239,8 @@ class MainActivity : AppCompatActivity() {
         )
 
         database =
-            AppDatabaseProvider
-                .getInstance(
-                    this
-                )
-
-        scanManager =
-            ScanManager(
-                contentResolver =
-                    contentResolver,
-                database =
-                    database
+            AppDatabase.getInstance(
+                this
             )
 
         bindViews()
@@ -377,22 +353,18 @@ class MainActivity : AppCompatActivity() {
 
         scanAllButton.setOnClickListener {
 
-            if (
-                scanJob?.isActive == true
-            ) {
+            if (scanJob?.isActive == true) {
                 return@setOnClickListener
             }
 
             checkPermissionsAndScan(
-                scanAll = true
+                true
             )
         }
 
         selectFoldersButton.setOnClickListener {
 
-            if (
-                scanJob?.isActive == true
-            ) {
+            if (scanJob?.isActive == true) {
                 return@setOnClickListener
             }
 
@@ -403,15 +375,11 @@ class MainActivity : AppCompatActivity() {
 
         scanSelectedButton.setOnClickListener {
 
-            if (
-                scanJob?.isActive == true
-            ) {
+            if (scanJob?.isActive == true) {
                 return@setOnClickListener
             }
 
-            if (
-                selectedFolderUris.isEmpty()
-            ) {
+            if (selectedFolderUris.isEmpty()) {
 
                 Toast.makeText(
                     this,
@@ -423,15 +391,13 @@ class MainActivity : AppCompatActivity() {
             }
 
             checkPermissionsAndScan(
-                scanAll = false
+                false
             )
         }
 
         excludeFoldersButton.setOnClickListener {
 
-            if (
-                scanJob?.isActive == true
-            ) {
+            if (scanJob?.isActive == true) {
                 return@setOnClickListener
             }
 
@@ -442,9 +408,7 @@ class MainActivity : AppCompatActivity() {
 
         clearExcludedFoldersButton.setOnClickListener {
 
-            if (
-                scanJob?.isActive == true
-            ) {
+            if (scanJob?.isActive == true) {
                 return@setOnClickListener
             }
 
@@ -464,7 +428,7 @@ class MainActivity : AppCompatActivity() {
             scanJob?.cancel()
 
             setScanningUi(
-                scanning = false
+                false
             )
 
             statusText.text =
@@ -476,10 +440,6 @@ class MainActivity : AppCompatActivity() {
         scanAll: Boolean
     ) {
 
-        /*
-         * Remember the user's requested scan mode
-         * before opening Android's permission dialog.
-         */
         pendingScanAll =
             scanAll
 
@@ -495,15 +455,12 @@ class MainActivity : AppCompatActivity() {
                 ) != PackageManager.PERMISSION_GRANTED
             }
 
-        if (
-            missingPermissions.isEmpty()
-        ) {
+        if (missingPermissions.isEmpty()) {
 
-            pendingScanAll =
-                null
+            pendingScanAll = null
 
             startScan(
-                scanAll = scanAll
+                scanAll
             )
 
         } else {
@@ -538,15 +495,10 @@ class MainActivity : AppCompatActivity() {
         scanAll: Boolean
     ) {
 
-        if (
-            scanJob?.isActive == true
-        ) {
+        if (scanJob?.isActive == true) {
             return
         }
 
-        /*
-         * Safety check for selected-folder scanning.
-         */
         if (
             !scanAll &&
             selectedFolderUris.isEmpty()
@@ -562,14 +514,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         setScanningUi(
-            scanning = true
+            true
         )
 
-        scanningProgressBar.progress =
-            0
+        scanningProgressBar.progress = 0
 
         scanningProgressText.text =
-            "0%"
+            "Scanning..."
 
         scanningStageText.text =
             if (scanAll) {
@@ -585,10 +536,6 @@ class MainActivity : AppCompatActivity() {
                 "Scanning selected folders..."
             }
 
-        /*
-         * Convert the user's folder selections into
-         * MediaStore relative paths.
-         */
         val selectedPaths =
             if (scanAll) {
                 emptyList()
@@ -611,18 +558,13 @@ class MainActivity : AppCompatActivity() {
                     it.isNotBlank()
                 }
 
-        /*
-         * If the user selected folders but none could
-         * be converted into a valid path, don't perform
-         * a misleading empty scan.
-         */
         if (
             !scanAll &&
             selectedPaths.isEmpty()
         ) {
 
             setScanningUi(
-                scanning = false
+                false
             )
 
             Toast.makeText(
@@ -639,51 +581,46 @@ class MainActivity : AppCompatActivity() {
 
                 try {
 
-                    val summary =
-                        withContext(
-                            Dispatchers.IO
-                        ) {
+                    withContext(
+                        Dispatchers.IO
+                    ) {
 
-                            scanManager.scan(
+                        ScanManager.scan(
+                            context = this@MainActivity,
+                            selectedRelativePaths = selectedPaths,
+                            excludedRelativePaths = excludedPaths,
+                            scanAll = scanAll,
+                            onProgress = { progress ->
 
-                                scanAll =
-                                    scanAll,
+                                runOnUiThread {
 
-                                selectedFolderPaths =
-                                    selectedPaths,
-
-                                excludedFolderPaths =
-                                    excludedPaths,
-
-                                onProgress = {
-                                        stage,
-                                        progress ->
-
-                                    runOnUiThread {
-
-                                        updateProgress(
-                                            stage,
-                                            progress
-                                        )
-                                    }
+                                    updateProgress(
+                                        progress
+                                    )
                                 }
-                            )
-                        }
+                            },
+                            isCancelled = {
+                                !isActive
+                            }
+                        )
+                    }
+
+                    if (!isActive) {
+                        return@launch
+                    }
 
                     setScanningUi(
-                        scanning = false
+                        false
                     )
 
-                    showScanResult(
-                        summary
-                    )
+                    showScanResult()
 
                 } catch (
                     exception: CancellationException
                 ) {
 
                     setScanningUi(
-                        scanning = false
+                        false
                     )
 
                     statusText.text =
@@ -694,7 +631,7 @@ class MainActivity : AppCompatActivity() {
                 ) {
 
                     setScanningUi(
-                        scanning = false
+                        false
                     )
 
                     statusText.text =
@@ -710,48 +647,71 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateProgress(
-        stage: String,
-        progress: Int
+        progress: String
     ) {
 
         scanningStageText.text =
-            stage
+            progress
 
-        scanningProgressBar.progress =
-            progress.coerceIn(
-                0,
-                100
-            )
-
+        /*
+         * Our ScanManager currently reports text progress
+         * rather than a numeric percentage.
+         */
         scanningProgressText.text =
-            "${progress.coerceIn(0, 100)}%"
+            "Working..."
+
+        scanningProgressBar.isIndeterminate =
+            true
     }
 
-    private fun showScanResult(
-        summary: ScanManager.ScanSummary
-    ) {
+    private fun showScanResult() {
 
-        photoCountText.text =
-            "Photos: ${summary.photoCount}"
+        /*
+         * Read the final counts directly from Room.
+         */
+        lifecycleScope.launch(
+            Dispatchers.IO
+        ) {
 
-        videoCountText.text =
-            "Videos: ${summary.videoCount}"
+            val photoCount =
+                database.mediaDao()
+                    .getPhotoCount()
 
-        totalCountText.text =
-            "Total: ${
-                summary.photoCount +
-                        summary.videoCount
-            }"
+            val videoCount =
+                database.mediaDao()
+                    .getVideoCount()
 
-        val intent =
-            Intent(
-                this,
-                DuplicateResultsActivity::class.java
-            )
+            val totalCount =
+                database.mediaDao()
+                    .getTotalCount()
 
-        startActivity(
-            intent
-        )
+            withContext(
+                Dispatchers.Main
+            ) {
+
+                photoCountText.text =
+                    "Photos: $photoCount"
+
+                videoCountText.text =
+                    "Videos: $videoCount"
+
+                totalCountText.text =
+                    "Total: $totalCount"
+
+                statusText.text =
+                    "Scan completed."
+
+                val intent =
+                    Intent(
+                        this@MainActivity,
+                        DuplicateResultsActivity::class.java
+                    )
+
+                startActivity(
+                    intent
+                )
+            }
+        }
     }
 
     private fun setScanningUi(
@@ -764,6 +724,9 @@ class MainActivity : AppCompatActivity() {
             } else {
                 View.GONE
             }
+
+        scanningProgressBar.isIndeterminate =
+            scanning
 
         scanAllButton.isEnabled =
             !scanning
@@ -785,9 +748,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateSelectedFoldersText() {
 
-        if (
-            selectedFolderUris.isEmpty()
-        ) {
+        if (selectedFolderUris.isEmpty()) {
 
             selectedFoldersText.text =
                 getString(
@@ -812,9 +773,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateExcludedFoldersText() {
 
-        if (
-            excludedFolderUris.isEmpty()
-        ) {
+        if (excludedFolderUris.isEmpty()) {
 
             excludedFoldersText.text =
                 "No excluded folders."
@@ -874,20 +833,6 @@ class MainActivity : AppCompatActivity() {
             scanJob?.isActive != true
     }
 
-    /**
-     * Convert an Android Storage Access Framework tree URI
-     * into a MediaStore relative path.
-     *
-     * Example:
-     *
-     * primary:DCIM
-     *      ↓
-     * DCIM
-     *
-     * primary:Pictures/Screenshots
-     *      ↓
-     * Pictures/Screenshots
-     */
     private fun getTreeRelativePath(
         treeUri: Uri
     ): String {
@@ -930,4 +875,3 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 }
-

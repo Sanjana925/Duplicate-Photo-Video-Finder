@@ -875,6 +875,10 @@ class DuplicateResultsActivity : AppCompatActivity() {
     /**
      * Convert a Room MediaEntity into the UI model
      * used by DuplicateGroupAdapter.
+     *
+     * Phase 4.1:
+     * Video duration is now carried from Room to the
+     * results model so the video UI can display and use it.
      */
     private fun MediaEntity.toDuplicateItem():
             DuplicateItem {
@@ -895,6 +899,9 @@ class DuplicateResultsActivity : AppCompatActivity() {
 
             height =
                 height,
+
+            duration =
+                duration,
 
             sha256 =
                 sha256,
@@ -963,7 +970,8 @@ class DuplicateResultsActivity : AppCompatActivity() {
         val size: Long,
         val width: Int,
         val height: Int,
+        val duration: Long = 0L,
         val sha256: String,
         val uri: String = ""
-    ) : java.io.Serializable
+    )
 }

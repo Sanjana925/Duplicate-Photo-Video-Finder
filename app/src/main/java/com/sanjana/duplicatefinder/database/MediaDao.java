@@ -34,11 +34,6 @@ public interface MediaDao {
     )
     int getVideoCount();
 
-    /*
-     * Return only file sizes that occur more than once.
-     *
-     * We do NOT load every media item into memory.
-     */
     @Query(
             "SELECT size FROM media " +
                     "WHERE size > 0 " +
@@ -48,34 +43,26 @@ public interface MediaDao {
     )
     List<Long> getDuplicateCandidateSizes();
 
-    /*
-     * Return only media having one particular size.
-     */
     @Query(
             "SELECT * FROM media " +
                     "WHERE size = :size " +
-                    "ORDER BY uri"
+                    "ORDER BY mediaType, relativePath, name, uri"
     )
     List<MediaEntity> getMediaWithSize(long size);
 
-    /*
-     * Find all exact duplicate files.
-     *
-     * A SHA-256 that occurs at least twice is an exact
-     * duplicate group.
-     */
     @Query(
             "SELECT * FROM media " +
                     "WHERE sha256 IS NOT NULL " +
                     "AND sha256 != '' " +
-                    "AND sha256 IN (" +
-                    "   SELECT sha256 FROM media " +
+                    "AND (mediaType, sha256) IN (" +
+                    "   SELECT mediaType, sha256 " +
+                    "   FROM media " +
                     "   WHERE sha256 IS NOT NULL " +
                     "   AND sha256 != '' " +
-                    "   GROUP BY sha256 " +
+                    "   GROUP BY mediaType, sha256 " +
                     "   HAVING COUNT(*) > 1" +
                     ") " +
-                    "ORDER BY mediaType, sha256, relativePath, name"
+                    "ORDER BY mediaType, sha256, relativePath, name, uri"
     )
     List<MediaEntity> getExactDuplicateItems();
 
@@ -89,9 +76,7 @@ public interface MediaDao {
                     "   HAVING COUNT(*) > 1" +
                     ")"
     )
-    int getDuplicateGroupCount(
-            String mediaType
-    );
+    int getDuplicateGroupCount(String mediaType);
 
     @Query(
             "SELECT COUNT(*) FROM media " +
@@ -107,43 +92,81 @@ public interface MediaDao {
                     "   HAVING COUNT(*) > 1" +
                     ")"
     )
-    int getDuplicateItemCount(
-            String mediaType
-    );
+    int getDuplicateItemCount(String mediaType);
+
+    @Query(
+            "SELECT * FROM media " +
+                    "WHERE mediaType = :mediaType " +
+                    "AND sha256 IS NOT NULL " +
+                    "AND sha256 != '' " +
+                    "AND sha256 IN (" +
+                    "   SELECT sha256 FROM media " +
+                    "   WHERE mediaType = :mediaType " +
+                    "   AND sha256 IS NOT NULL " +
+                    "   AND sha256 != '' " +
+                    "   GROUP BY sha256 " +
+                    "   HAVING COUNT(*) > 1" +
+                    ") " +
+                    "ORDER BY sha256, relativePath, name, uri"
+    )
+    List<MediaEntity> getExactDuplicateItems(String mediaType);
 
     @Query(
             "DELETE FROM media " +
                     "WHERE uri IN (:uris)"
     )
-    void deleteByUris(
-            List<String> uris
-    );
+    void deleteByUris(List<String> uris);
 
     @Query(
             "UPDATE media " +
                     "SET quickFingerprint = :fingerprint " +
                     "WHERE uri = :uri"
     )
-    void updateQuickFingerprint(
-            String uri,
-            String fingerprint
-    );
+    void updateQuickFingerprint(String uri, String fingerprint);
 
     @Query(
             "UPDATE media " +
                     "SET sha256 = :sha256 " +
                     "WHERE uri = :uri"
     )
-    void updateSha256(
-            String uri,
-            String sha256
-    );
+    void updateSha256(String uri, String sha256);
 
     @Query(
             "DELETE FROM media " +
                     "WHERE uri = :uri"
     )
-    void deleteByUri(
-            String uri
+    void deleteByUri(String uri);
+
+    // ---------------------------------------------------------
+    // VIDEO FINGERPRINT METHODS
+    // ---------------------------------------------------------
+
+    @Query(
+            "SELECT * FROM media " +
+                    "WHERE mediaType = 'VIDEO'"
+    )
+    List<MediaEntity> getAllVideos();
+
+    @Query(
+            "UPDATE media " +
+                    "SET videoFingerprint = :fingerprint " +
+                    "WHERE uri = :uri"
+    )
+    void updateVideoFingerprint(
+            String uri,
+            String fingerprint
     );
+
+    // ---------------------------------------------------------
+    // SIMILAR VIDEO METHODS
+    // ---------------------------------------------------------
+
+    @Query(
+            "SELECT * FROM media " +
+                    "WHERE mediaType = 'VIDEO' " +
+                    "AND videoFingerprint IS NOT NULL " +
+                    "AND videoFingerprint != '' " +
+                    "ORDER BY uri"
+    )
+    List<MediaEntity> getVideosWithFingerprints();
 }

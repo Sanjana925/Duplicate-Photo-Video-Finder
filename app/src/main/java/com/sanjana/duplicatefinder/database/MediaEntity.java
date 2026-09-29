@@ -21,28 +21,21 @@ public class MediaEntity {
     public String uri = "";
 
     public String name = "";
-
     public String mimeType = "";
-
     public long size = 0L;
-
     public long dateAdded = 0L;
-
     public long dateModified = 0L;
-
     public int width = 0;
-
     public int height = 0;
-
     public long duration = 0L;
-
     public String relativePath = "";
-
     public String mediaType = "";
-
     public String quickFingerprint = "";
-
     public String sha256 = "";
+
+    // Phase 4.2:
+    // Compact visual fingerprint generated from sampled video frames.
+    public String videoFingerprint = "";
 
     public long scannedAt = 0L;
 
@@ -63,7 +56,6 @@ public class MediaEntity {
             String mediaType,
             long scannedAt
     ) {
-
         this.uri = uri;
         this.name = name;
         this.mimeType = mimeType;
